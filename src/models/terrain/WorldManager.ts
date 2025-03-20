@@ -18,15 +18,31 @@ export default class WorldManager {
 
   /**
    * Convert engine coordinates to virtual Mars coordinates
+   * Ensures all values are finite and within reasonable bounds
    */
   static toVirtual(position: Vector3): Vector3 {
-    // Apply offset to get virtual position without wrapping
-    // Wrapping was causing position mismatches during raycasting
-    return new Vector3(
+    // Validate input
+    if (!position || !isFinite(position.x) || !isFinite(position.y) || !isFinite(position.z)) {
+      console.warn("Invalid position in toVirtual, using fallback", position?.toString());
+      return new Vector3(
+        this.WORLD_WIDTH / 2,
+        0,
+        this.WORLD_HEIGHT / 2
+      );
+    }
+    
+    // Apply offset with validation
+    const result = new Vector3(
       position.x + this.offset.x,
       position.y,
       position.z + this.offset.z
     );
+    
+    // Ensure result is within world bounds
+    result.x = Math.max(0, Math.min(this.WORLD_WIDTH, result.x));
+    result.z = Math.max(0, Math.min(this.WORLD_HEIGHT, result.z));
+    
+    return result;
   }
   
   /**
@@ -42,11 +58,27 @@ export default class WorldManager {
 
   /**
    * Convert virtual Mars coordinates to engine-safe coordinates
+   * Ensures all values are finite and within reasonable bounds
    */
   static toEngine(position: Vector3): Vector3 {
-    // Convert from virtual to engine coordinates
-    const result = position.subtract(this.offset);
-    console.log(`Converted to engine: ${position.toString()} => ${result.toString()}`);
+    // Validate input
+    if (!position || !isFinite(position.x) || !isFinite(position.y) || !isFinite(position.z)) {
+      console.warn("Invalid position in toEngine, using fallback", position?.toString());
+      return Vector3.Zero();
+    }
+    
+    // Apply offset with validation
+    const result = new Vector3(
+      position.x - this.offset.x,
+      position.y,
+      position.z - this.offset.z
+    );
+    
+    // Ensure result is within reasonable bounds for engine
+    const MAX_ENGINE_COORD = 10000; // Reasonable limit for engine coordinates
+    result.x = Math.max(-MAX_ENGINE_COORD, Math.min(MAX_ENGINE_COORD, result.x));
+    result.z = Math.max(-MAX_ENGINE_COORD, Math.min(MAX_ENGINE_COORD, result.z));
+    
     return result;
   }
 

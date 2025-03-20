@@ -113,34 +113,50 @@ export default class TerrainChunk {
     this.mesh.checkCollisions = true;
     this.mesh.isPickable = true;
     this.mesh.isVisible = true; // Ensure mesh is visible
+    this.mesh.visibility = 1;
     this.mesh.receiveShadows = true;
     this.mesh.doNotSyncBoundingInfo = true; // Improve performance
     
     // Debug visualization for development
     this.mesh.showBoundingBox = true;
     this.mesh.enablePointerMoveEvents = true;
+    console.log("Mesh visibility forced to true");
 
     const positions: number[] = [];
     const indices: number[] = [];
     const normals: number[] = [];
     const uvs: number[] = [];
 
-    // Create vertices
+    // Create vertices with height constraints
     for (let z = 0; z < this.resolution; z++) {
       for (let x = 0; x < this.resolution; x++) {
         // Position in local space
         const localX = (x / (this.resolution - 1)) * this.size;
         const localZ = (z / (this.resolution - 1)) * this.size;
 
-        // Get height from heightmap
+        // Get height from heightmap with validation
         const heightIndex = z * this.resolution + x;
-        let height = heightmapData[heightIndex] * this.heightScale;
+        let height = 0;
+        
+        if (heightIndex < heightmapData.length) {
+          const rawHeight = heightmapData[heightIndex];
+          // Constrain height to reasonable values (-100 to 100)
+          height = isFinite(rawHeight) ? 
+            Math.max(-100, Math.min(100, rawHeight * 0.1)) : 0;
+        }
 
-        // Add noise based on terrain features
-        // Calculate world position for noise
-        const worldX = this.x * this.size + localX;
-        const worldZ = this.y * this.size + localZ;
-        height += this.addTerrainNoise(worldX, worldZ);
+        // Check if this is an edge vertex - no noise at edges
+        const isEdgeVertex = 
+          x === 0 || x === this.resolution - 1 || 
+          z === 0 || z === this.resolution - 1;
+          
+        if (!isEdgeVertex) {
+          // Only add noise to non-edge vertices
+          const worldX = this.x * this.size + localX;
+          const worldZ = this.y * this.size + localZ;
+          const noise = this.addTerrainNoise(worldX, worldZ);
+          height += isFinite(noise) ? Math.max(-10, Math.min(10, noise)) : 0;
+        }
 
         positions.push(localX, height, localZ);
 
@@ -182,8 +198,15 @@ export default class TerrainChunk {
       return;
     }
 
-    // Apply material
+    // Apply proper terrain material instead of wireframe
     this.applyTerrainMaterial();
+    
+    // Ensure bounding info is properly computed
+    this.mesh.computeWorldMatrix(true);
+    this.mesh.refreshBoundingInfo();
+    
+    // Simplify logging - just output minimal info
+    console.log(`Terrain chunk ${this.x}_${this.y} ready`);
   }
 
   private createProceduralMesh(): void {
@@ -277,6 +300,16 @@ export default class TerrainChunk {
   }
 
   private addTerrainNoise(x: number, z: number): number {
+    // Use a common seed based on world position for consistent noise
+    const seed = Math.floor(x / this.size) * 10000 + Math.floor(z / this.size);
+    
+    // Calculate distance from edge as a factor from 0 to 1
+    const edgeX = x % this.size;
+    const edgeZ = z % this.size;
+    const distFromEdgeX = Math.min(edgeX, this.size - edgeX) / (this.size * 0.25);
+    const distFromEdgeZ = Math.min(edgeZ, this.size - edgeZ) / (this.size * 0.25);
+    const edgeFactor = Math.min(1, Math.min(distFromEdgeX, distFromEdgeZ));
+    
     // Calculate terrain steepness
     const slopeNoise = this.noise(x * 0.01, z * 0.01);
     const slope = Math.abs(slopeNoise);
@@ -291,7 +324,8 @@ export default class TerrainChunk {
     // More noise in flat areas, less in steep areas
     const noiseScale = Math.exp(-slope * 5) * 2.0;
 
-    return detailNoise * noiseScale;
+    // Scale the noise to zero near chunk edges
+    return detailNoise * noiseScale * edgeFactor;
   }
 
   private calculateSlopeAt(x: number, z: number): number {
@@ -316,97 +350,42 @@ export default class TerrainChunk {
   private applyTerrainMaterial(): void {
     if (!this.mesh) return;
 
-    // Register custom shader
-    Effect.ShadersStore["terrainVertexShader"] = this.getTerrainVertexShader();
-    Effect.ShadersStore["terrainFragmentShader"] =
-      this.getTerrainFragmentShader();
-
-    // Create shader material
-    const shaderMaterial = new ShaderMaterial(
-      `terrain_material_${this.x}_${this.y}`,
-      this.scene,
-      {
-        vertex: "terrain",
-        fragment: "terrain",
-      },
-      {
-        attributes: ["position", "normal", "uv"],
-        uniforms: [
-          "world",
-          "worldView",
-          "worldViewProjection",
-          "view",
-          "projection",
-          "heightScale",
-          "time",
-        ],
-        samplers: [
-          "mossTex",
-          "bumpyTex",
-          "flatTex",
-          "steepTex",
-          "rockyTex",
-          "snowTex",
-        ],
-      }
-    );
-
-    // Add error callback for shader compilation
-    shaderMaterial.onBindObservable.add(() => {
-      if (!shaderMaterial.getEffect().isReady()) {
-        console.error("Failed to compile terrain shader");
-        shaderMaterial.dispose();
-      }
-    });
-
-    // Load textures
-    const texturePaths = [
-      "/resources/graphics/textures/mars/Terrain0.jpg", // Moss
-      "/resources/graphics/textures/mars/Terrain1.jpg", // Small bumpy
-      "/resources/graphics/textures/mars/Terrain2.jpg", // Flat areas
-      "/resources/graphics/textures/mars/Terrain3.jpg", // Steeper edges
-      "/resources/graphics/textures/mars/Terrain4.jpg", // Rocky
-      "/resources/graphics/textures/mars/Terrain5.jpg", // High elevation
-    ];
-
-    // Set textures with error handling
-    const textureNames = [
-      "mossTex",
-      "bumpyTex",
-      "flatTex",
-      "steepTex",
-      "rockyTex",
-      "snowTex",
-    ];
-    texturePaths.forEach((path, index) => {
-      const texture = new Texture(
-        path,
-        this.scene,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        (msg) => {
-          console.error(`Failed to load texture ${path}:`, msg);
-        }
+    // Create a simpler material while we're testing
+    const terrainMaterial = new StandardMaterial(`terrain_material_${this.x}_${this.y}`, this.scene);
+    
+    // Base Mars color
+    terrainMaterial.diffuseColor = new Color3(0.76, 0.44, 0.33);
+    
+    // Add some variation with texture if available
+    try {
+      // Add main terrain texture
+      terrainMaterial.diffuseTexture = new Texture(
+        "/resources/graphics/textures/mars/Terrain2.jpg", // Use flat terrain texture
+        this.scene
       );
-      shaderMaterial.setTexture(textureNames[index], texture);
-    });
-
-    // Set normal maps for future use if needed
-
-    // Set parameters
-    shaderMaterial.setFloat("heightScale", this.heightScale);
-
-    // Update time parameter for potential animation effects
-    this.scene.onBeforeRenderObservable.add(() => {
-      shaderMaterial.setFloat(
-        "time",
-        this.scene.getEngine().getDeltaTime() / 1000
+      
+      (terrainMaterial.diffuseTexture as Texture).uScale = 10;
+      (terrainMaterial.diffuseTexture as Texture).vScale = 10;
+      
+      // Add bump texture for detail
+      terrainMaterial.bumpTexture = new Texture(
+        "/resources/graphics/textures/mars/Terrain2_normal.jpg",
+        this.scene
       );
-    });
-
-    this.mesh.material = shaderMaterial;
+      (terrainMaterial.bumpTexture as Texture).uScale = 10;
+      (terrainMaterial.bumpTexture as Texture).vScale = 10;
+      
+      // Set other material properties
+      terrainMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
+      terrainMaterial.specularPower = 32;
+      
+      console.log(`Applied terrain texture to chunk ${this.x}_${this.y}`);
+    } catch (error) {
+      console.warn(`Fallback to basic material for chunk ${this.x}_${this.y}:`, error);
+    }
+    
+    // Apply material to mesh
+    this.mesh.material = terrainMaterial;
   }
 
   private getTerrainVertexShader(): string {

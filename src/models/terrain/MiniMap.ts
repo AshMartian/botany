@@ -142,50 +142,64 @@ export default class MiniMap {
   }
 
   private updateVisibleMapArea(patchX: number, patchZ: number): void {
-    // Ensure patchGrid is cleared and readded
+    // Clear previous grid
     if (this.patchGrid.parent) {
       this.patchGrid.parent.removeControl(this.patchGrid);
     }
     this.mapContainer.addControl(this.patchGrid);
+    
+    // Clear previous patches
+    this.patchGrid.children.slice().forEach(child => {
+      this.patchGrid.removeControl(child);
+    });
 
-    // Remove all previous patch images
-    while (this.patchGrid.children.length > 0) {
-      this.patchGrid.removeControl(this.patchGrid.children[0]);
-    }
-
-    // Load 3x3 grid of patches around current position with timeout to allow texture loading
-    setTimeout(() => {
-      const visibleRadius = 1;
-      for (let dx = -visibleRadius; dx <= visibleRadius; dx++) {
-        for (let dy = -visibleRadius; dy <= visibleRadius; dy++) {
-          const currentPatchX = Math.clamp(
-            patchX + dx,
-            0,
-            this.totalPatches.x - 1
-          );
-          const currentPatchZ = Math.clamp(
-            patchZ + dy,
-            0,
-            this.totalPatches.y - 1
-          );
-
-          const img = new Image(
-            `patch_${currentPatchX}_${currentPatchZ}`,
-            `https://ashmartian.com/mars/patch_${currentPatchX}_${currentPatchZ}_color.jpg`
-          );
-
-          // Position images in grid layout
-          img.width = this.mapSize / 3 + "px";
-          img.height = this.mapSize / 3 + "px";
-          img.left = (dx + 1) * (this.mapSize / 3) - this.mapSize / 2 + "px";
-          img.top = (dy + 1) * (this.mapSize / 3) - this.mapSize / 2 + "px";
-          img.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-          img.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-
-          this.patchGrid.addControl(img);
-        }
+    // Log what we're trying to load for debugging
+    console.log(`Loading map patches around (${patchX}, ${patchZ})`);
+    
+    // Improved patch loading implementation
+    const visibleRadius = 1;
+    
+    for (let dx = -visibleRadius; dx <= visibleRadius; dx++) {
+      for (let dy = -visibleRadius; dy <= visibleRadius; dy++) {
+        const currentPatchX = Math.clamp(patchX + dx, 0, this.totalPatches.x - 1);
+        const currentPatchZ = Math.clamp(patchZ + dy, 0, this.totalPatches.y - 1);
+        
+        // Create container for patch with background color
+        const patchContainer = new Rectangle();
+        patchContainer.width = this.mapSize / 3 + "px";
+        patchContainer.height = this.mapSize / 3 + "px";
+        patchContainer.left = (dx + 1) * (this.mapSize / 3) - this.mapSize / 2 + "px";
+        patchContainer.top = (dy + 1) * (this.mapSize / 3) - this.mapSize / 2 + "px";
+        patchContainer.thickness = 1;
+        patchContainer.background = "#8B4513"; // Default Mars color
+        patchContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+        patchContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+        
+        // Add to grid
+        this.patchGrid.addControl(patchContainer);
+        
+        // URL for patch color
+        const patchUrl = `https://ashmartian.com/mars/patch_${currentPatchX}_${currentPatchZ}_color.jpg`;
+        
+        // Create image and add to container
+        const img = new Image(`patch_${currentPatchX}_${currentPatchZ}`, patchUrl);
+        img.width = "100%";
+        img.height = "100%";
+        img.stretch = Image.STRETCH_FILL;
+        
+        // Track image loading with better error handling
+        img.onImageLoadedObservable.add(() => {
+          console.log(`Loaded map tile: ${patchUrl}`);
+        });
+        
+        (img as any).onImageErrorObservable?.add(() => {
+          console.warn(`Failed to load map tile: ${patchUrl}`);
+          // Container already has fallback color
+        });
+        
+        patchContainer.addControl(img);
       }
-    }, 50);
+    }
   }
 
   private openGlobalMap(): void {

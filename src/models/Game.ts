@@ -6,6 +6,8 @@ import {
   AbstractMesh,
   RayHelper,
   Scene as BabylonScene,
+  StandardMaterial,
+  MeshBuilder,
 } from "@babylonjs/core";
 import WorldManager from "@/models/terrain/WorldManager";
 import GameScene from "./scene/Scene";
@@ -21,6 +23,7 @@ import Collisions from "@/models/mehanics/Collisions";
 import Canvas from "@/models/scene/Canvas";
 import Points from "@/models/mehanics/Points";
 import DevMode from "@/models/scene/DevMode";
+import TerrainChunk from "./terrain/TerrainChunk";
 import Savepoint from "@/models/mehanics/Savepoint";
 import BlendModes from "@/models/scene/BlendModes";
 import Materials from "@/models/scene/Materials";
@@ -34,6 +37,7 @@ import GlobalMap from "@/models/terrain/GlobalMap";
 export default class Game {
   private scene!: BabylonScene;
   private positionSaveInterval?: number;
+  private debugMode = false;
   init() {
     const playerId = this.getPlayerId();
     const skinColor = Color3.Random();
@@ -67,6 +71,11 @@ export default class Game {
           new Player(playerId);
         });
       });
+
+      // Add position sanitizer and diagnostics
+      this.setupPositionSanitizer();
+      this.setupTerrainUpdates(); // Add terrain updates during movement
+      this.logSceneInfo();
     });
   }
 
@@ -77,14 +86,14 @@ export default class Game {
     globalThis.collisions = new Collisions();
 
     // Initialize terrain system first
-    window.terrainManager = new TerrainManager(window.scene!);
+    window.terrainManager = new TerrainManager(window.scene!, 71, 3); // Increase render distance to 3
 
     // Default spawn position at origin
     const spawnPosition = new Vector3(30, 0, 30);
 
     try {
-      // Wait for initial chunks around spawn point
-      await window.terrainManager.initialize();
+      // Re-enable terrain manager initialization
+      await window.terrainManager.initialize(spawnPosition);
 
       // Now initialize player after terrain is ready
       PlayerSelf.init(() => {
@@ -157,49 +166,36 @@ export default class Game {
     // Convert to engine coordinates (should be near origin)
     const enginePosition = WorldManager.toEngine(spawnPosition);
 
-    // Position player at engine coordinates
-    playerMesh.position.copyFrom(enginePosition);
-    playerMesh.position.y = 10000; // Start much higher for reliable raycast
+    // Position player higher above spawn point for reliable raycast
+    playerMesh.position.x = enginePosition.x;
+    playerMesh.position.z = enginePosition.z;
+    playerMesh.position.y = 200; // Start higher but not too high
 
-    console.log("Initial spawn at engine position:", enginePosition.toString());
-    console.log("Virtual position:", spawnPosition.toString());
-
-    // Debug position conversion
-    WorldManager.debugPositionConversion(enginePosition);
-    
-    // Log chunk coordinates for debugging
-    if (window.terrainManager) {
-      const spawnChunk = WorldManager.getChunkCoordinates(
-        WorldManager.toVirtual(enginePosition),
-        window.terrainManager.chunkSize || 71
-      );
-      console.log("Spawn chunk coordinates:", spawnChunk);
-      console.log("Active terrain chunks:", window.terrainManager.getActiveChunkCoordinates());
-    }
-
-    // Let engine settle before raycasting
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Validate terrain manager
-    if (!window.terrainManager) {
-      console.error("TerrainManager not initialized!");
-      playerMesh.position.y = 50; // Fallback height
-      return;
-    }
-
-    // Force load chunks at spawn point first
-    const spawnChunk = WorldManager.getChunkCoordinates(
-      WorldManager.toVirtual(enginePosition),
-      window.terrainManager.chunkSize || 71
+    console.log(
+      "Initial spawn at engine position:",
+      playerMesh.position.toString()
     );
-    console.log("Loading spawn chunk:", spawnChunk);
-    await window.terrainManager.loadChunk(spawnChunk.x, spawnChunk.y);
 
-    // Wait for chunk to be ready
+    // Wait for terrain to be fully created
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // Perform precision raycast to find ground
-    await this.performPrecisionRaycast(playerMesh);
+    // Check if we can use the terrain manager
+    if (window.terrainManager) {
+      const virtualPos = WorldManager.toVirtual(playerMesh.position);
+      const chunkX = Math.floor(virtualPos.x / window.terrainManager.chunkSize);
+      const chunkY = Math.floor(virtualPos.z / window.terrainManager.chunkSize);
+
+      console.log(`Looking for terrain in chunk (${chunkX}, ${chunkY})`);
+
+      // Ensure the spawn chunk is loaded
+      if (!window.terrainManager.hasChunk(chunkX, chunkY)) {
+        console.log(`Loading spawn chunk: (${chunkX}, ${chunkY})`);
+        await window.terrainManager.loadChunk(chunkX, chunkY);
+      }
+    }
+
+    // Perform simplified raycast to find ground
+    await this.performSimplifiedRaycast(playerMesh);
 
     // Enable physics/controls
     if (window.playerController?.enableControls) {
@@ -213,132 +209,88 @@ export default class Game {
     this.startPositionPersistence();
   }
 
-  private async performPrecisionRaycast(
+  private async performSimplifiedRaycast(
     playerMesh: AbstractMesh
   ): Promise<void> {
-    // Create ray starting from player position
-    const rayOrigin = playerMesh.position.clone();
-    rayOrigin.y = 10000; // Start high above terrain
+    // Create multiple rays from different heights
+    const rayOrigin = new Vector3(
+      playerMesh.position.x,
+      500,
+      playerMesh.position.z
+    );
+    const rayDirection = new Vector3(0, -1, 0);
+    const rayLength = 1000;
 
-    const rayLength = 12000;
-    const ray = new Ray(rayOrigin, Vector3.Down(), rayLength);
-
-    // Add ray visualization for debugging
-    const rayHelper = new RayHelper(ray);
-    rayHelper.show(this.scene, Color3.Red()); // Visualize the ray
-
-    // Add debug logging for ray position and chunks
-    console.log("Ray origin (engine):", rayOrigin.toString());
-    console.log("Ray direction:", ray.direction.toString());
     console.log(
-      "Active terrain chunks:",
-      window.terrainManager
-        ?.getActiveChunkCoordinates()
-        .map((c) => `${c.x},${c.y}`)
+      "Casting ray from:",
+      rayOrigin.toString(),
+      "with length",
+      rayLength
     );
 
-    // Ensure terrain is loaded at player position before raycasting
-    if (window.terrainManager?.updateChunks) {
-      window.terrainManager.updateChunks(
-        new Vector3(rayOrigin.x, 0, rayOrigin.z)
-      );
-      // Wait longer for chunks to load
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-
-    // Try multiple times with a more robust search pattern
-    let hit = null;
-    let attempts = 0;
-    const maxAttempts = 40; // Increased attempts for better reliability
-    const searchRadius = 100; // Meters around initial position
-
-    while (attempts < maxAttempts && !hit?.pickedPoint) {
-      // Get virtual position for chunk readiness check
-      const virtualPos = WorldManager.toVirtual(ray.origin);
-
-      // Only cast ray if chunk is confirmed ready
-      if (
-        window.terrainManager?.isChunkReady(
-          Math.floor(virtualPos.x / (window.terrainManager.chunkSize || 71)),
-          Math.floor(virtualPos.z / (window.terrainManager.chunkSize || 71))
-        )
-      ) {
-        hit = globalThis.scene.pickWithRay(ray, undefined, false);
-
-        if (hit?.pickedPoint) {
-          // Found ground - position player slightly above it
-          playerMesh.position.y = hit.pickedPoint.y + 20;
-
-          // Update global map position
-          const virtualPos = WorldManager.toVirtual(hit.pickedPoint);
-          this.updateGlobalMapPosition(virtualPos);
-
-          console.log("Found ground at height:", hit.pickedPoint.y);
-
-          // Dispose ray helper after successful hit
-          rayHelper.dispose();
-          return;
-        }
-      }
-
-      // Expand search in spiral pattern for better coverage
-      const angle = (attempts * Math.PI) / 2;
-      const distance = searchRadius * (Math.floor(attempts / 8) + 1); // Expand slower
-      ray.origin.x = rayOrigin.x + Math.cos(angle) * distance;
-      ray.origin.z = rayOrigin.z + Math.sin(angle) * distance;
-
-      // Update ray helper to show new position
-      // rayHelper.show(this.scene, BABYLON.GLTF2.Col.Red());
-
-      // Wait longer for chunks to load
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Force terrain update at this position with higher priority
-      if (window.terrainManager?.updateChunks) {
-        window.terrainManager.updateChunks(
-          new Vector3(ray.origin.x, 0, ray.origin.z)
-        );
-      }
-
-      attempts++;
-    }
-
-    console.warn(
-      "Terrain not found after multiple attempts, checking for fallbacks"
-    );
-
-    // Check all terrain meshes manually as fallback
+    // Create ray visualization that stays visible longer
+    const ray = new Ray(rayOrigin, rayDirection, rayLength);
+    const rayHelper = new RayHelper(ray);
+    rayHelper.show(this.scene, Color3.Red());
+    // Use direct mesh intersection test for better reliability
     const terrainMeshes = this.scene.meshes.filter(
-      (m: AbstractMesh) => m.name.startsWith("terrain_chunk_") && m.isEnabled()
+      (mesh) =>
+        mesh.name.startsWith("terrain_chunk_") || mesh.name === "flat_terrain"
     );
 
-    if (terrainMeshes.length > 0) {
-      console.warn("Raycast failed but terrain exists. Checking all meshes...");
-      const groundY = Math.max(
-        ...terrainMeshes.map((m: AbstractMesh) => m.position.y)
+    const hit = ray.intersectsMeshes(terrainMeshes);
+
+    if (hit && hit.length > 0) {
+      console.log(
+        `Direct hit on ${
+          hit[0].pickedMesh?.name
+        } at ${hit[0].pickedPoint?.toString()}`
       );
-      playerMesh.position.y = groundY + 200;
+      playerMesh.position.y = hit[0].pickedPoint!.y + 2;
+
+      // Update global map position
+      const virtualPos = WorldManager.toVirtual(hit[0].pickedPoint!);
+      this.updateGlobalMapPosition(virtualPos);
     } else {
-      // Last resort fallback
-      playerMesh.position.y = 500;
-    }
+      // Try to find the closest terrain chunk to stand on
+      console.warn("Ray did not hit terrain. Finding closest terrain...");
+      const terrainMeshes = this.scene.meshes.filter((mesh) =>
+        mesh.name.startsWith("terrain_chunk_")
+      );
 
-    // Dispose ray helper
-    rayHelper.dispose();
+      if (terrainMeshes.length > 0) {
+        // Sort by distance to player
+        terrainMeshes.sort(
+          (a, b) =>
+            Vector3.Distance(
+              a.position,
+              new Vector3(playerMesh.position.x, 0, playerMesh.position.z)
+            ) -
+            Vector3.Distance(
+              b.position,
+              new Vector3(playerMesh.position.x, 0, playerMesh.position.z)
+            )
+        );
 
-    // Request terrain chunks in a wider area as a last resort
-    if (window.terrainManager?.updateChunks) {
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dz = -1; dz <= 1; dz++) {
-          const pos = new Vector3(
-            playerMesh.position.x + dx * 100,
-            0,
-            playerMesh.position.z + dz * 100
-          );
-          window.terrainManager.updateChunks(pos);
-        }
+        // Use the closest terrain
+        const closestTerrain = terrainMeshes[0];
+        console.log(
+          `Positioning player on closest terrain: ${closestTerrain.name}`
+        );
+        playerMesh.position = new Vector3(
+          playerMesh.position.x,
+          closestTerrain.position.y + 2,
+          playerMesh.position.z
+        );
+      } else {
+        // Last resort - create emergency ground
+        playerMesh.position.y = 2;
+        console.warn("No terrain chunks found. Emergency ground created.");
       }
     }
+
+    // Keep ray visible for debugging
+    setTimeout(() => rayHelper.dispose(), 10000);
   }
 
   private getSavedPosition(): Vector3 | null {
@@ -389,16 +341,22 @@ export default class Game {
       clearInterval(this.positionSaveInterval);
     }
 
-    // Save position every 5 seconds
+    // Save position and update terrain every 5 seconds
     this.positionSaveInterval = window.setInterval(() => {
       const playerId = store.getPlayerId();
       const playerMesh = globalThis.scene.getMeshByName(
         "playerFoot_" + playerId
       );
+
       if (playerMesh) {
         // Get virtual position for persistence
         const virtualPos = WorldManager.toVirtual(playerMesh.position);
         this.updateGlobalMapPosition(virtualPos);
+
+        // Update terrain chunks based on player position
+        if (window.terrainManager) {
+          window.terrainManager.updateChunks(playerMesh.position);
+        }
 
         // Check if world needs to be shifted to maintain precision
         if (WorldManager.updateOrigin(playerMesh.position)) {
@@ -433,6 +391,111 @@ export default class Game {
         `Virtual: (${virtualPos.x.toFixed(2)}, ${virtualPos.z.toFixed(2)})`
       );
     }
+  }
+
+  private setupPositionSanitizer(): void {
+    // Check for non-finite positions in all critical components
+    this.scene.onBeforeRenderObservable.add(() => {
+      // Check player position
+      const playerId = store.getPlayerId();
+      const playerMesh = this.scene.getMeshByName("playerFoot_" + playerId);
+
+      if (playerMesh) {
+        // Fix any non-finite values
+        if (
+          !isFinite(playerMesh.position.x) ||
+          !isFinite(playerMesh.position.y) ||
+          !isFinite(playerMesh.position.z)
+        ) {
+          console.warn("Fixed non-finite player position");
+
+          playerMesh.position.x = isFinite(playerMesh.position.x)
+            ? playerMesh.position.x
+            : 0;
+          playerMesh.position.y = isFinite(playerMesh.position.y)
+            ? playerMesh.position.y
+            : 50;
+          playerMesh.position.z = isFinite(playerMesh.position.z)
+            ? playerMesh.position.z
+            : 0;
+        }
+      }
+
+      // Also check camera
+      if (this.scene.activeCamera) {
+        const camera = this.scene.activeCamera;
+        if (
+          !isFinite(camera.position.x) ||
+          !isFinite(camera.position.y) ||
+          !isFinite(camera.position.z)
+        ) {
+          console.warn("Fixed non-finite camera position");
+          camera.position = new Vector3(
+            isFinite(camera.position.x) ? camera.position.x : 0,
+            isFinite(camera.position.y) ? camera.position.y : 50,
+            isFinite(camera.position.z) ? camera.position.z : 0
+          );
+        }
+      }
+    });
+  }
+
+  private setupTerrainUpdates(): void {
+    // Setup more frequent terrain updates during player movement
+    let lastPosition = Vector3.Zero();
+    let movementTimeout: number | null = null;
+
+    this.scene.onBeforeRenderObservable.add(() => {
+      const playerId = store.getPlayerId();
+      const playerMesh = this.scene.getMeshByName("playerFoot_" + playerId);
+
+      if (playerMesh) {
+        // Check if player has moved significantly
+        if (Vector3.Distance(playerMesh.position, lastPosition) > 5) {
+          // Player has moved, update last position
+          lastPosition = playerMesh.position.clone();
+
+          // Update terrain immediately
+          if (window.terrainManager) {
+            window.terrainManager.updateChunks(playerMesh.position);
+          }
+
+          // Clear existing timeout
+          if (movementTimeout !== null) {
+            clearTimeout(movementTimeout);
+          }
+
+          // Set timeout to update terrain after movement stops
+          movementTimeout = window.setTimeout(() => {
+            if (window.terrainManager) {
+              window.terrainManager.updateChunks(playerMesh.position);
+            }
+            movementTimeout = null;
+          }, 500);
+        }
+      }
+    });
+  }
+
+  private logSceneInfo(): void {
+    // Log scene info less frequently and only when debug is enabled
+    setInterval(() => {
+      if (!this.debugMode) return;
+
+      const playerId = store.getPlayerId();
+      const playerMesh = this.scene.getMeshByName("playerFoot_" + playerId);
+
+      if (playerMesh) {
+        console.log("Player position:", playerMesh.position.toString());
+
+        // Simplified terrain chunk logging
+        const terrainMeshes = this.scene.meshes.filter((m) =>
+          m.name.startsWith("terrain_chunk_")
+        );
+
+        console.log(`Active terrain chunks: ${terrainMeshes.length}`);
+      }
+    }, 10000); // Change to 10 seconds
   }
 
   public cleanup(): void {

@@ -92,20 +92,26 @@ export default class Controller {
       
       if (!checkFocusAvailable) {
         this.mouseIsCaptured = true
-        const canvas = document.getElementById('canvas')
-        
-        if (canvas) {
-          canvas.requestPointerLock()
-        }
+        this.requestPointerLock()
       }
-      
     })
     
     const pointerlockchange = () => {
       this.mouseIsCaptured = document.pointerLockElement || false
+      
+      // Handle pointer lock release
+      if (!this.mouseIsCaptured) {
+        console.log("Pointer lock released")
+      }
     }
     
     document.addEventListener('pointerlockchange', pointerlockchange, false)
+    
+    // Handle pointer lock errors
+    document.addEventListener('pointerlockerror', (event) => {
+      console.warn("Pointer lock error:", event)
+      this.mouseIsCaptured = false
+    })
     
     window.addEventListener('pointermove', (e) => {
       if (this.mouseIsCaptured) {
@@ -114,5 +120,17 @@ export default class Controller {
         store.setRotate(this.playerId, rotateX, rotateY)
       }
     })
+  }
+  
+  private requestPointerLock() {
+    try {
+      const canvas = document.getElementById('canvas')
+      if (canvas && canvas.requestPointerLock) {
+        canvas.requestPointerLock()
+      }
+    } catch (error) {
+      console.warn("Pointer lock request failed:", error)
+      this.mouseIsCaptured = false
+    }
   }
 }
