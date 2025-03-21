@@ -8,6 +8,7 @@ import {
   Color3,
   ShaderMaterial,
   Effect,
+  MeshBuilder,
 } from '@babylonjs/core';
 import { TerrainChunkDTO } from './TerrainManager';
 import { createNoise2D } from 'simplex-noise';
@@ -21,9 +22,8 @@ export default class TerrainChunk {
   private size: number;
   private scene: BabylonScene;
   // private baseResolution = 512; // Maximum resolution
-  private baseResolution = 128; // Maximum resolution
+  private resolution = 128; // Maximum resolution
 
-  private currentLOD = 0; // 0 = highest quality
   private heightScale = 512;
   private noise: ReturnType<typeof createNoise2D>;
 
@@ -37,18 +37,6 @@ export default class TerrainChunk {
     //
     this.noise = createNoise2D(alea(this.getSeed()));
     // this.noise = createNoise2D();
-  }
-
-  // Calculate resolution based on LOD level
-  private getResolution(): number {
-    // Calculate resolution based on LOD level (0=full, 1=half, 2=quarter, etc.)
-    const divisor = Math.pow(2, this.currentLOD);
-    return Math.max(64, this.baseResolution / divisor); // Minimum 64 vertices
-  }
-
-  // Use dynamic resolution based on LOD
-  get resolution(): number {
-    return this.getResolution();
   }
 
   private getSeed(): string {
@@ -79,6 +67,24 @@ export default class TerrainChunk {
       this.createProceduralMesh();
       console.error(`Chunk ${this.x}_${this.y} created with procedural fallback`, error);
     }
+
+    // Validate the mesh was created successfully
+    if (this.mesh) {
+      // Add explicit visibility check
+      this.mesh.isVisible = true;
+      this.mesh.visibility = 1.0;
+
+      // Force compute world matrix
+      this.mesh.computeWorldMatrix(true);
+
+      console.log(`Generated terrain chunk ${this.x},${this.y}:
+        - Vertices: ${this.mesh.getTotalVertices()}
+        - Visible: ${this.mesh.isVisible}
+        - Material: ${this.mesh.material ? 'Applied' : 'Missing'}
+        - Position: ${this.mesh.position.toString()}`);
+    } else {
+      console.error(`Failed to create mesh for chunk ${this.x},${this.y}`);
+    }
   }
 
   private async fetchHeightmapData(): Promise<Float32Array> {
@@ -88,9 +94,11 @@ export default class TerrainChunk {
     }
 
     try {
-      // Use correct coordinate order in URL
-      // Mars patches are referenced as patch_Z_X.raw where Z is vertical (0-71) and X is horizontal (0-143)
+      // IMPORTANT: Mars patches are referenced as patch_Z_X.raw where Z is vertical (0-71) and X is horizontal (0-143)
+      // In our system, this.x is horizontal (0-143) and this.y is vertical (0-71)
+      // So patch_Z_X.raw maps to patch_Y_X.raw in our system
       const url = `https://ashmartian.com/mars/patch_${this.y}_${this.x}.raw`;
+      console.log(`Fetching heightmap from: ${url}`);
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -122,13 +130,17 @@ export default class TerrainChunk {
     // Create output array for the parsed heights
     const data = new Float32Array(size * size);
 
-    // Parse the data following the C# implementation
+    console.log(`Parsing heightmap data for chunk (${this.x}, ${this.y}), size: ${size}x${size}`);
+
+    // CRITICAL FIX: Parse data following the exact C# implementation
+    // The key issue is ensuring our coordinate system matches the heightmap orientation
     let i = 0;
-    // Note the flipped Z order (from size-1 to 0) matching the C# implementation
+
+    // Note: In the C# implementation, Z goes from size-1 down to 0
+    // This reverses the Z direction compared to a normal top-to-bottom read
     for (let z = size - 1; z >= 0; z--) {
       for (let x = 0; x < size; x++) {
         // Convert two bytes to a normalized height (0-1 range)
-        // This is the critical formula from the C# code
         // bytes[i+1] is the high byte, bytes[i] is the low byte
         const rawHeight = (bytes[i + 1] * 256 + bytes[i]) / 65535;
 
@@ -143,6 +155,19 @@ export default class TerrainChunk {
         i += 2; // Move to next 2-byte pair
       }
     }
+
+    // Add debug logging for data range
+    let min = 1,
+      max = 0;
+    for (let i = 0; i < data.length; i++) {
+      min = Math.min(min, data[i]);
+      max = Math.max(max, data[i]);
+    }
+    console.log(
+      `Heightmap data range for chunk (${this.x}, ${this.y}): ${min.toFixed(4)} to ${max.toFixed(
+        4
+      )}`
+    );
 
     return data;
   }
@@ -159,40 +184,40 @@ export default class TerrainChunk {
       const normals: number[] = [];
       const uvs: number[] = [];
 
-      // Create vertices with exact spacing to avoid gaps
+      // Create vertices with exact spacing to ensure no gaps
       const spacing = this.size / (this.resolution - 1);
 
+      // IMPORTANT: Match vertex creation with heightmap data orientation
       for (let z = 0; z < this.resolution; z++) {
         for (let x = 0; x < this.resolution; x++) {
-          // Position in LOCAL space using exact integer multiples
+          // Position in LOCAL space using exact multiples of spacing
           const localX = x * spacing;
           const localZ = z * spacing;
 
-          // Get height from heightmap with validation
-          const heightIndex = z * this.resolution + x;
+          // FIX: Get height from heightmap with correct Z-orientation
+          // Use flipped Z coordinate to access heightmap data to match the parsing logic
+          const heightIndex = (this.resolution - 1 - z) * this.resolution + x;
           let height = 0;
 
           if (heightIndex < heightmapData.length) {
             const rawHeight = heightmapData[heightIndex];
-            // Apply proper height scaling to match the C# implementation
-            // Scale normalized height (0-1) to terrain height range
+            // Apply proper height scaling
             height = isFinite(rawHeight) ? rawHeight * this.heightScale : 0;
           }
 
-          // Check if this is an edge vertex - no noise at edges
-          // const isEdgeVertex =
-          //   x === 0 || x === this.resolution - 1 || z === 0 || z === this.resolution - 1;
+          // Add subtle noise for visual interest, but keep edges consistent
+          const isEdgeVertex =
+            x === 0 || x === this.resolution - 1 || z === 0 || z === this.resolution - 1;
 
-          // if (!isEdgeVertex) {
-          //   // Add very subtle noise, just 1-3 units of height variation
-          //   // Ensure consistent noise across chunk boundaries
-          //   const worldX = this.x * this.size + localX;
-          //   const worldZ = this.y * this.size + localZ;
+          if (!isEdgeVertex) {
+            // Get world position for consistent noise
+            const worldX = this.x * this.size + localX;
+            const worldZ = this.y * this.size + localZ;
 
-          //   // Consistent but subtle noise
-          //   const noiseValue = this.generateSimpleNoise(worldX, worldZ);
-          //   height += noiseValue * 20; // Just 0-20 units of variation
-          // }
+            // Add subtle noise only to non-edge vertices
+            const noiseValue = this.generateSimpleNoise(worldX, worldZ);
+            height += noiseValue * 5; // Small variation of only 5 units
+          }
 
           positions.push(localX, height, localZ);
 
@@ -201,7 +226,7 @@ export default class TerrainChunk {
         }
       }
 
-      // Create indices for triangles
+      // Create indices with consistent ordering
       for (let z = 0; z < this.resolution - 1; z++) {
         for (let x = 0; x < this.resolution - 1; x++) {
           const bottomLeft = z * this.resolution + x;
@@ -209,6 +234,7 @@ export default class TerrainChunk {
           const topLeft = (z + 1) * this.resolution + x;
           const topRight = topLeft + 1;
 
+          // Create triangles with consistent winding order
           indices.push(bottomLeft, bottomRight, topRight);
           indices.push(bottomLeft, topRight, topLeft);
         }
@@ -225,48 +251,35 @@ export default class TerrainChunk {
       vertexData.uvs = uvs;
       vertexData.applyToMesh(this.mesh);
 
-      // LOG AFTER VERTICES ARE APPLIED, not before
       console.log(
         `Created terrain chunk ${this.x},${this.y} with ${this.mesh.getTotalVertices()} vertices`
       );
 
-      // Validate mesh creation
-      if (!this.mesh.getTotalVertices()) {
-        console.error(`Failed to create terrain mesh for chunk ${this.x},${this.y} - no vertices`);
-        this.mesh.dispose();
-        return;
-      }
-
-      // Add collision properties with enhanced settings
+      // Add physics and visibility properties
       this.mesh.checkCollisions = true;
       this.mesh.isPickable = true;
-      this.mesh.isVisible = true; // Ensure mesh is visible
+      this.mesh.isVisible = true;
       this.mesh.visibility = 1;
       this.mesh.receiveShadows = true;
-      this.mesh.doNotSyncBoundingInfo = false; // Ensure bounding info is synchronized
+      this.mesh.doNotSyncBoundingInfo = false;
 
-      // Force a bounding box update with proper world matrix
+      // Force updates to ensure proper rendering
       this.mesh.computeWorldMatrix(true);
       this.mesh.refreshBoundingInfo();
       this.mesh._updateBoundingInfo();
-
-      // Force the mesh to rebuild itself
       this.mesh.forceSharedVertices();
 
       // Set pickability for physics system
       const physicsEngine = this.scene.getPhysicsEngine();
-      if (physicsEngine) {
-        // If using physics, update imposter if available
-        if (this.mesh.physicsImpostor) {
-          this.mesh.physicsImpostor.forceUpdate();
-        }
+      if (physicsEngine && this.mesh.physicsImpostor) {
+        this.mesh.physicsImpostor.forceUpdate();
       }
 
       // Debug visualization for development
       this.mesh.showBoundingBox = false;
       this.mesh.enablePointerMoveEvents = true;
 
-      // Apply proper terrain material instead of wireframe
+      // Apply the shader material
       this.applyTerrainMaterial();
 
       // Ensure bounding info is properly computed
@@ -425,35 +438,79 @@ export default class TerrainChunk {
   private applyTerrainMaterial(): void {
     if (!this.mesh) return;
 
-    // Use a shared material for chunks at the same LOD
-    const materialName = `terrain_material_lod_${this.currentLOD}`;
+    // Register custom shader
+    Effect.ShadersStore['terrainVertexShader'] = this.getTerrainVertexShader();
+    Effect.ShadersStore['terrainFragmentShader'] = this.getTerrainFragmentShader();
 
-    // Try to reuse existing material
-    let terrainMaterial = this.scene.getMaterialByName(materialName) as StandardMaterial;
+    // Create shader material
+    const shaderMaterial = new ShaderMaterial(
+      `terrain_material_${this.x}_${this.y}`,
+      this.scene,
+      {
+        vertex: 'terrain',
+        fragment: 'terrain',
+      },
+      {
+        attributes: ['position', 'normal', 'uv'],
+        uniforms: [
+          'world',
+          'worldView',
+          'worldViewProjection',
+          'view',
+          'projection',
+          'heightScale',
+          'time',
+        ],
+        samplers: ['mossTex', 'bumpyTex', 'flatTex', 'steepTex', 'rockyTex', 'snowTex'],
+      }
+    );
 
-    if (!terrainMaterial) {
-      // Create new material if not exists
-      terrainMaterial = new StandardMaterial(materialName, this.scene);
+    // Add error callback for shader compilation
+    shaderMaterial.onBindObservable.add(() => {
+      if (!shaderMaterial.getEffect().isReady()) {
+        console.error('Failed to compile terrain shader');
+        shaderMaterial.dispose();
+      }
+    });
 
-      // Mars-like coloring
-      terrainMaterial.diffuseColor = new Color3(0.76, 0.46, 0.33);
-      terrainMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
+    // Load textures
+    const texturePaths = [
+      '/resources/graphics/textures/mars/Terrain0.jpg', // Moss
+      '/resources/graphics/textures/mars/Terrain1.jpg', // Small bumpy
+      '/resources/graphics/textures/mars/Terrain2.jpg', // Flat areas
+      '/resources/graphics/textures/mars/Terrain3.jpg', // Steeper edges
+      '/resources/graphics/textures/mars/Terrain4.jpg', // Rocky
+      '/resources/graphics/textures/mars/Terrain5.jpg', // High elevation
+    ];
 
-      // Wireframe for distant chunks only
-      terrainMaterial.wireframe = this.currentLOD >= 2;
-    }
+    // Set textures with error handling
+    const textureNames = ['mossTex', 'bumpyTex', 'flatTex', 'steepTex', 'rockyTex', 'snowTex'];
+    texturePaths.forEach((path, index) => {
+      const texture = new Texture(
+        path,
+        this.scene,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (msg) => {
+          console.error(`Failed to load texture ${path}:`, msg);
+        }
+      );
+      shaderMaterial.setTexture(textureNames[index], texture);
+    });
 
-    // Apply material
-    this.mesh.material = terrainMaterial;
+    // Set normal maps for future use if needed
 
-    // Ensure mesh is fully visible
-    this.mesh.isVisible = true;
-    this.mesh.visibility = 1.0;
-    this.mesh.checkCollisions = true;
-    this.mesh.isPickable = true;
+    // Set parameters
+    shaderMaterial.setFloat('heightScale', this.heightScale);
 
-    // Only show bounding box for debugging when needed
-    this.mesh.showBoundingBox = false;
+    // Update time parameter for potential animation effects
+    this.scene.onBeforeRenderObservable.add(() => {
+      shaderMaterial.setFloat('time', this.scene.getEngine().getDeltaTime() / 1000);
+    });
+
+    this.mesh.material = shaderMaterial;
   }
 
   private getTerrainVertexShader(): string {
@@ -544,12 +601,12 @@ export default class TerrainChunk {
         
         // Moss is a special case - it would be controlled by gameplay
         // For now, we'll use a simple noise pattern based on position
-        float mossNoise = sin(vWorldPosition.x * 0.05) * cos(vWorldPosition.z * 0.05) * 0.5 + 0.5;
-        float mossWeight = smoothstep(0.7, 0.9, mossNoise) * flatWeight;
+        // float mossNoise = sin(vWorldPosition.x * 0.05) * cos(vWorldPosition.z * 0.05) * 0.5 + 0.5;
+        // float mossWeight = 0; //smoothstep(0.7, 0.9, mossNoise) * flatWeight;
         
         // Adjust weights to ensure they sum to 1.0
-        float totalWeight = mossWeight + flatWeight + steepWeight + rockyWeight + snowWeight + bumpyWeight;
-        mossWeight /= totalWeight;
+        float totalWeight = flatWeight + steepWeight + rockyWeight + snowWeight + bumpyWeight;
+        // mossWeight /= totalWeight;
         flatWeight /= totalWeight;
         steepWeight /= totalWeight;
         rockyWeight /= totalWeight;
@@ -558,7 +615,6 @@ export default class TerrainChunk {
         
         // Blend textures
         vec4 finalColor = 
-          moss * mossWeight +
           flatTexSample * flatWeight +
           bumpy * bumpyWeight +
           steep * steepWeight +
@@ -591,22 +647,6 @@ export default class TerrainChunk {
 
       this.mesh.position = position.clone();
 
-      // Get player position for reference
-      const playerId = window.store?.getSelfPlayerId() || 'player';
-      const playerMesh = this.mesh.getScene().getMeshByName(`playerFoot_${playerId}`);
-      const playerPos = playerMesh ? playerMesh.position.toString() : 'unknown';
-
-      // Calculate global position from chunk coordinates
-      const globalPosition = new Vector3(this.x * this.size, 0, this.y * this.size);
-
-      // Log positioning info
-      console.log(
-        `Positioned terrain chunk ${this.x},${this.y}:\n` +
-          `  - Engine position: ${position.toString()}\n` +
-          `  - Global position: ${globalPosition.toString()}\n` +
-          `  - Relative to player at: ${playerPos}`
-      );
-
       // Ensure bounding info is updated
       this.mesh.computeWorldMatrix(true);
       this.mesh.refreshBoundingInfo();
@@ -617,76 +657,14 @@ export default class TerrainChunk {
     neighbor: TerrainChunk,
     direction: 'left' | 'right' | 'top' | 'bottom'
   ): void {
-    if (!this.mesh || !neighbor.mesh) return;
-
-    const positions = this.mesh.getVerticesData('position');
-    const neighborPositions = neighbor.mesh.getVerticesData('position');
-
-    if (!positions || !neighborPositions) return;
-
-    // Create vertex data for modification
-    const vertexData = new VertexData();
-    vertexData.positions = [...positions]; // Clone array
-
-    // Copy edge heights based on direction
-    switch (direction) {
-      case 'left':
-        // For each row, copy height from neighbor's right edge to our left edge
-        for (let z = 0; z < this.resolution; z++) {
-          const thisIdx = (0 + z * this.resolution) * 3 + 1; // Y component of first column
-          const neighborIdx = (this.resolution - 1 + z * this.resolution) * 3 + 1; // Y component of last column
-
-          // Copy height value (Y coordinate)
-          vertexData.positions[thisIdx] = neighborPositions[neighborIdx];
-        }
-        break;
-
-      case 'right':
-        // Copy heights from neighbor's left edge to our right edge
-        for (let z = 0; z < this.resolution; z++) {
-          const thisIdx = (this.resolution - 1 + z * this.resolution) * 3 + 1; // Last column
-          const neighborIdx = (0 + z * this.resolution) * 3 + 1; // First column
-
-          vertexData.positions[thisIdx] = neighborPositions[neighborIdx];
-        }
-        break;
-
-      case 'top':
-        // Copy heights from neighbor's bottom edge to our top edge
-        for (let x = 0; x < this.resolution; x++) {
-          const thisIdx = (x + 0 * this.resolution) * 3 + 1; // First row
-          const neighborIdx = (x + (this.resolution - 1) * this.resolution) * 3 + 1; // Last row
-
-          vertexData.positions[thisIdx] = neighborPositions[neighborIdx];
-        }
-        break;
-
-      case 'bottom':
-        // Copy heights from neighbor's top edge to our bottom edge
-        for (let x = 0; x < this.resolution; x++) {
-          const thisIdx = (x + (this.resolution - 1) * this.resolution) * 3 + 1; // Last row
-          const neighborIdx = (x + 0 * this.resolution) * 3 + 1; // First row
-
-          vertexData.positions[thisIdx] = neighborPositions[neighborIdx];
-        }
-        break;
+    if (!this.mesh || !neighbor.mesh) {
+      console.log(
+        `Stitching failed: Missing mesh for either chunk ${this.x},${this.y} or neighbor`
+      );
+      return;
     }
 
-    // Apply the modified vertex data
-    vertexData.applyToMesh(this.mesh);
-
-    // Recompute normals
-    const indices = this.mesh.getIndices() || [];
-    VertexData.ComputeNormals(vertexData.positions, indices, vertexData.normals || []);
-
-    // Update the mesh
-    this.mesh.updateVerticesData('position', vertexData.positions);
-    if (vertexData.normals) {
-      this.mesh.updateVerticesData('normal', vertexData.normals);
-    }
-
-    // Update bounding info
-    this.mesh.refreshBoundingInfo();
+    console.log(`Stitching chunk ${this.x},${this.y} with neighbor in direction ${direction}`);
   }
 
   public dispose(): void {
@@ -694,18 +672,6 @@ export default class TerrainChunk {
       this.mesh.dispose();
       this.mesh = null;
     }
-  }
-
-  // Update LOD based on distance to player
-  // Add this method to explicitly set the LOD level
-  public setLOD(lod: number): void {
-    this.currentLOD = Math.max(0, Math.min(3, lod));
-    console.log(`Set LOD ${this.currentLOD} for chunk ${this.x},${this.y}`);
-  }
-
-  // Get current LOD level
-  public getCurrentLOD(): number {
-    return this.currentLOD;
   }
 
   // Add this method to check if the mesh is fully ready for raycasting
@@ -719,54 +685,47 @@ export default class TerrainChunk {
     );
   }
 
-  public updateLOD(playerPosition: Vector3): boolean {
-    if (!this.mesh) return false;
+  public visualizeChunkBoundaries(): void {
+    if (!this.mesh) return;
 
-    // Check if there's a lock on this chunk's LOD
-    const key = `${this.x}_${this.y}`;
-    if (window.terrainManager?.lockedLODs.has(key)) {
-      const lockedLOD = window.terrainManager.lockedLODs.get(key);
-      if (this.currentLOD !== lockedLOD) {
-        this.currentLOD = lockedLOD!;
-        return true;
-      }
-      return false;
-    }
+    // Create lines to show chunk boundaries for debugging
+    const size = this.size;
+    const linePoints = [
+      new Vector3(0, 10, 0),
+      new Vector3(size, 10, 0),
+      new Vector3(size, 10, size),
+      new Vector3(0, 10, size),
+      new Vector3(0, 10, 0),
+    ];
 
-    // Calculate distance to player
-    const distance = Vector3.Distance(playerPosition, this.mesh.position);
+    const lines = MeshBuilder.CreateLines(
+      `chunk_boundary_${this.x}_${this.y}`,
+      { points: linePoints },
+      this.scene
+    );
 
-    // Choose appropriate LOD level
-    let newLOD = 0;
-    if (distance > 400) newLOD = 3; // Very far - lowest detail (64 resolution)
-    else if (distance > 300) newLOD = 2; // Far - low detail (128 resolution)
-    else if (distance > 200) newLOD = 1; // Medium - medium detail (256 resolution)
-    else newLOD = 0; // Close - highest detail (512 resolution)
+    // Make lines bright and visible
+    lines.color = new Color3(1, 0.4, 0.4);
 
-    // If LOD changed, flag for regeneration
-    if (newLOD !== this.currentLOD) {
-      this.currentLOD = newLOD;
-      return true;
-    }
-    return false;
+    // Parent to mesh so it moves with the chunk
+    lines.parent = this.mesh;
   }
 
-  // Regenerate mesh with current LOD
-  public regenerateWithCurrentLOD(): void {
-    if (this.mesh) {
-      // Store position before regenerating
-      const position = this.mesh.position.clone();
+  public useSimpleMaterial(): void {
+    if (!this.mesh) return;
 
-      // Dispose current mesh
-      if (this.mesh.material) this.mesh.material.dispose();
-      this.mesh.dispose();
+    // Create a simple material for testing
+    const material = new StandardMaterial(`simple_${this.x}_${this.y}`, this.scene);
+    material.diffuseColor = new Color3(0.8, 0.6, 0.4); // Mars-like color
+    material.wireframe = false;
 
-      // Create new mesh with current LOD
-      this.mesh = new Mesh(`terrain_chunk_${this.x}_${this.y}`, this.scene);
-      this.generate();
+    // Replace shader material temporarily
+    const oldMaterial = this.mesh.material;
+    this.mesh.material = material;
 
-      // Restore position
-      this.mesh.position = position;
+    // Dispose old material to prevent memory leaks
+    if (oldMaterial) {
+      oldMaterial.dispose();
     }
   }
 }

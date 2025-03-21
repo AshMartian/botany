@@ -104,7 +104,7 @@ export default class MiniMap {
     if (!virtualPos) return;
 
     // Calculate which chunk the player is in
-    const chunkSize = 71;
+    const chunkSize = 128;
     const chunkX = Math.floor(virtualPos.x / chunkSize);
     const chunkZ = Math.floor(virtualPos.z / chunkSize);
 

@@ -23,7 +23,6 @@ declare global {
 export interface TerrainChunkDTO {
   x: number;
   y: number;
-  LOD: number;
   heightmap: ArrayBuffer; // Compressed Int16Array
   textureSeed: number;
   noiseSeed: number;
@@ -39,7 +38,7 @@ export default class TerrainManager {
   private lastChunkUpdate = 0;
   public _hasInitialized = false;
   public isTeleporting = false;
-  public lockedLODs = new Map<string, number>();
+  public debugMode = false; // Enable for visualization
 
   public get hasInitialized(): boolean {
     return this._hasInitialized;
@@ -50,17 +49,6 @@ export default class TerrainManager {
    */
   public lockForTeleport(isLocked: boolean): void {
     this.isTeleporting = isLocked;
-    if (!isLocked) {
-      // Clear LOD locks when teleport is done
-      this.lockedLODs.clear();
-    }
-  }
-
-  /**
-   * Lock a chunk's LOD to a specific level
-   */
-  public lockChunkLOD(x: number, y: number, lod: number): void {
-    this.lockedLODs.set(`${x}_${y}`, lod);
   }
 
   constructor(scene: BabylonScene, chunkSize = 213, renderDistance = 1) {
@@ -130,9 +118,9 @@ export default class TerrainManager {
     // Skip during teleportation
     if (this.isTeleporting) return;
 
-    // Throttle updates to improve performance
+    // Throttle updates to improve performance - increase minimum update time
     const now = Date.now();
-    if (now - this.lastChunkUpdate < 1000) return;
+    if (now - this.lastChunkUpdate < 2000) return; // Increase to 2 seconds (was 1 second)
     this.lastChunkUpdate = now;
 
     // Get player's global position
@@ -145,18 +133,13 @@ export default class TerrainManager {
 
     console.log(`Player is on chunk (${playerChunkX}, ${playerChunkY})`);
 
-    // STEP 1: Focus on the current chunk first
+    // Make sure center chunk exists
     const centerKey = `${playerChunkX}_${playerChunkY}`;
     if (!this.loadedChunks.has(centerKey) && !this.loadingChunks.has(centerKey)) {
-      // Load center chunk at HIGH QUALITY if not already loaded
       this.loadPriorityChunk(playerChunkX, playerChunkY);
     } else if (this.loadedChunks.has(centerKey)) {
-      // If we have this chunk, make sure it's high quality
-      const chunk = this.loadedChunks.get(centerKey)!;
-      if (chunk.getCurrentLOD() > 0) {
-        chunk.setLOD(0); // Highest quality
-        chunk.regenerateWithCurrentLOD();
-      }
+      // If the center chunk exists, force it to high quality and DON'T regenerate
+      this.loadedChunks.get(centerKey)!;
     }
 
     // STEP 2: Load ONLY the immediate surrounding chunks (8 chunks)
@@ -182,7 +165,7 @@ export default class TerrainManager {
       const key = `${x}_${y}`;
       if (!this.loadedChunks.has(key) && !this.loadingChunks.has(key)) {
         if (loadedCount < 2) {
-          this.loadChunk(x, y, 1); // Medium quality for adjacent chunks
+          this.loadChunk(x, y); // Medium quality for adjacent chunks
           loadedCount++;
         }
       }
@@ -202,7 +185,7 @@ export default class TerrainManager {
     }
   }
 
-  public async loadChunk(x: number, y: number, lod = 0): Promise<TerrainChunk | null> {
+  public async loadChunk(x: number, y: number): Promise<TerrainChunk | null> {
     // Validate chunk coordinates
     if (x < 0 || x >= 144 || y < 0 || y >= 72) {
       console.error(`Invalid chunk request: ${x},${y}`);
@@ -211,21 +194,12 @@ export default class TerrainManager {
 
     const key = `${x}_${y}`;
 
-    // Check if already loaded with better or same LOD
-    if (this.loadedChunks.has(key)) {
-      const existingChunk = this.loadedChunks.get(key)!;
-      if (existingChunk.getCurrentLOD() <= lod) {
-        return existingChunk; // Already loaded with better or equal quality
-      }
-      // Otherwise continue and upgrade it
-    }
-
     // Check if being loaded
     if (this.loadingChunks.has(key)) {
       return null; // Already in progress
     }
 
-    console.log(`Loading chunk (${x}, ${y}) with LOD ${lod}`);
+    console.log(`Loading chunk (${x}, ${y})`);
     this.loadingChunks.add(key);
 
     try {
@@ -238,9 +212,8 @@ export default class TerrainManager {
         this.loadedChunks.delete(key);
       }
 
-      // Create the chunk with specified LOD
+      // Create the chunk
       const chunk = new TerrainChunk(x, y, this.chunkSize, this.scene);
-      chunk.setLOD(lod);
 
       // Generate mesh
       await chunk.generate();
@@ -259,6 +232,9 @@ export default class TerrainManager {
         console.log(`Adding terrain mesh ${x},${y} to scene`);
         this.scene.addMesh(mesh);
       }
+
+      // IMPORTANT: Stitch with neighboring chunks
+      this.stitchChunkWithNeighbors(chunk, x, y);
 
       return chunk;
     } catch (error) {
@@ -279,22 +255,12 @@ export default class TerrainManager {
 
     const key = `${validX}_${validY}`;
 
-    // If already loaded, just ensure LOD is high
-    if (this.loadedChunks.has(key)) {
-      const chunk = this.loadedChunks.get(key)!;
-      if (chunk.updateLOD(Vector3.Zero())) {
-        chunk.regenerateWithCurrentLOD();
-      }
-      return chunk;
-    }
-
     // Otherwise load at highest resolution
     try {
       console.log(`Loading priority chunk at (${validX}, ${validY})`);
 
-      // Create new chunk with high resolution (LOD 0)
+      // Create new chunk
       const chunk = new TerrainChunk(validX, validY, this.chunkSize, this.scene);
-      chunk.setLOD(0); // Highest resolution
 
       // Generate mesh
       await chunk.generate();
@@ -307,6 +273,9 @@ export default class TerrainManager {
       // Store in manager
       this.loadedChunks.set(key, chunk);
 
+      // IMPORTANT: Stitch with neighboring chunks
+      this.stitchChunkWithNeighbors(chunk, validX, validY);
+
       return chunk;
     } catch (error) {
       console.error(`Failed to load priority chunk at (${validX}, ${validY}):`, error);
@@ -317,52 +286,74 @@ export default class TerrainManager {
   /**
    * Unload chunks that are too far from the player
    */
-  private unloadDistantChunks(playerChunkX: number, playerChunkY: number): void {
-    for (const [key, chunk] of this.loadedChunks.entries()) {
-      const [x, y] = key.split('_').map(Number);
-      const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
+  // private unloadDistantChunks(playerChunkX: number, playerChunkY: number): void {
+  //   for (const [key, chunk] of this.loadedChunks.entries()) {
+  //     const [x, y] = key.split('_').map(Number);
+  //     const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
 
-      if (distance > this.renderDistance + 1) {
-        chunk.dispose();
-        this.loadedChunks.delete(key);
-      }
-    }
-  }
+  //     if (distance > this.renderDistance + 1) {
+  //       chunk.dispose();
+  //       this.loadedChunks.delete(key);
+  //     }
+  //   }
+  // }
 
   private stitchChunkWithNeighbors(chunk: TerrainChunk, x: number, y: number): void {
-    // Check for existing neighbors and stitch with them
+    console.log(`Checking neighbors for stitching chunk ${x},${y}`);
+    return;
+    // Debug visualization - uncomment to visualize edges
+    // chunk.visualizeEdges();
 
-    // Left neighbor
-    const leftKey = `${x - 1}_${y}`;
-    if (this.loadedChunks.has(leftKey)) {
-      const leftNeighbor = this.loadedChunks.get(leftKey)!;
-      chunk.stitchWithNeighbor(leftNeighbor, 'left');
-      leftNeighbor.stitchWithNeighbor(chunk, 'right');
-    }
+    // let stitchedAny = false;
 
-    // Right neighbor
-    const rightKey = `${x + 1}_${y}`;
-    if (this.loadedChunks.has(rightKey)) {
-      const rightNeighbor = this.loadedChunks.get(rightKey)!;
-      chunk.stitchWithNeighbor(rightNeighbor, 'right');
-      rightNeighbor.stitchWithNeighbor(chunk, 'left');
-    }
+    // // Left neighbor (-X)
+    // const leftKey = `${x - 1}_${y}`;
+    // if (this.loadedChunks.has(leftKey)) {
+    //   const leftNeighbor = this.loadedChunks.get(leftKey)!;
+    //   console.log(`Stitching ${x},${y} with left neighbor at ${x - 1},${y}`);
+    //   chunk.stitchWithNeighbor(leftNeighbor, 'left');
+    //   leftNeighbor.stitchWithNeighbor(chunk, 'right');
+    //   stitchedAny = true;
+    // }
 
-    // Top neighbor
-    const topKey = `${x}_${y - 1}`;
-    if (this.loadedChunks.has(topKey)) {
-      const topNeighbor = this.loadedChunks.get(topKey)!;
-      chunk.stitchWithNeighbor(topNeighbor, 'top');
-      topNeighbor.stitchWithNeighbor(chunk, 'bottom');
-    }
+    // // Right neighbor (+X)
+    // const rightKey = `${x + 1}_${y}`;
+    // if (this.loadedChunks.has(rightKey)) {
+    //   const rightNeighbor = this.loadedChunks.get(rightKey)!;
+    //   console.log(`Stitching ${x},${y} with right neighbor at ${x + 1},${y}`);
+    //   chunk.stitchWithNeighbor(rightNeighbor, 'right');
+    //   rightNeighbor.stitchWithNeighbor(chunk, 'left');
+    //   stitchedAny = true;
+    // }
 
-    // Bottom neighbor
-    const bottomKey = `${x}_${y + 1}`;
-    if (this.loadedChunks.has(bottomKey)) {
-      const bottomNeighbor = this.loadedChunks.get(bottomKey)!;
-      chunk.stitchWithNeighbor(bottomNeighbor, 'bottom');
-      bottomNeighbor.stitchWithNeighbor(chunk, 'top');
-    }
+    // // Top neighbor (-Z)
+    // const topKey = `${x}_${y - 1}`;
+    // if (this.loadedChunks.has(topKey)) {
+    //   const topNeighbor = this.loadedChunks.get(topKey)!;
+    //   console.log(`Stitching ${x},${y} with top neighbor at ${x},${y - 1}`);
+    //   chunk.stitchWithNeighbor(topNeighbor, 'top');
+    //   topNeighbor.stitchWithNeighbor(chunk, 'bottom');
+    //   stitchedAny = true;
+    // }
+
+    // // Bottom neighbor (+Z)
+    // const bottomKey = `${x}_${y + 1}`;
+    // if (this.loadedChunks.has(bottomKey)) {
+    //   const bottomNeighbor = this.loadedChunks.get(bottomKey)!;
+    //   console.log(`Stitching ${x},${y} with bottom neighbor at ${x},${y + 1}`);
+    //   chunk.stitchWithNeighbor(bottomNeighbor, 'bottom');
+    //   bottomNeighbor.stitchWithNeighbor(chunk, 'top');
+    //   stitchedAny = true;
+    // }
+
+    // if (stitchedAny) {
+    //   // After stitching is complete, force this chunk to refresh
+    //   const mesh = chunk.getMesh();
+    //   if (mesh) {
+    //     mesh.refreshBoundingInfo();
+    //     mesh.computeWorldMatrix(true);
+    //   }
+    // }
   }
 
   // Add this method to prioritize loading the center chunk at high resolution
@@ -382,9 +373,8 @@ export default class TerrainManager {
     console.log(`Loading center chunk (${validChunkX}, ${validChunkY}) at high resolution`);
 
     try {
-      // Create a new chunk with forced high resolution (LOD 0)
+      // Create a new chunk
       const chunk = new TerrainChunk(validChunkX, validChunkY, this.chunkSize, this.scene);
-      chunk.setLOD(0); // Force highest resolution
 
       // Generate the mesh
       await chunk.generate();
@@ -426,14 +416,11 @@ export default class TerrainManager {
    * Load surrounding chunks with optimized async loading strategy
    */
   public loadSurroundingChunksAsync(centerX: number, centerY: number): void {
-    // Create a queue of chunks to load with distance-based LOD
-    const chunkQueue: Array<{ x: number; y: number; lod: number; distance: number }> = [];
+    // Create a queue of chunks to load
+    const chunkQueue: Array<{ x: number; y: number; distance: number }> = [];
 
     // Add surrounding chunks with progressively lower detail
     for (let ring = 1; ring <= this.renderDistance; ring++) {
-      // Calculate LOD based on ring (higher ring = lower detail)
-      const lod = Math.min(ring, 3);
-
       // Add chunks in this ring
       for (let dx = -ring; dx <= ring; dx++) {
         for (let dy = -ring; dy <= ring; dy++) {
@@ -451,7 +438,6 @@ export default class TerrainManager {
                 chunkQueue.push({
                   x,
                   y,
-                  lod,
                   distance: Math.max(Math.abs(dx), Math.abs(dy)),
                 });
               }
@@ -471,7 +457,7 @@ export default class TerrainManager {
     const processNext = () => {
       if (chunkQueue.length === 0 || loading >= maxConcurrent) return;
 
-      const { x, y, lod } = chunkQueue.shift()!;
+      const { x, y } = chunkQueue.shift()!;
       loading++;
 
       // Start loading this chunk
@@ -479,7 +465,6 @@ export default class TerrainManager {
       this.loadingChunks.add(key);
 
       const chunk = new TerrainChunk(x, y, this.chunkSize, this.scene);
-      chunk.setLOD(lod);
 
       chunk
         .generate()
@@ -489,8 +474,11 @@ export default class TerrainManager {
           chunk.setPosition(enginePos);
 
           this.loadedChunks.set(key, chunk);
-          this.loadingChunks.delete(key);
 
+          // IMPORTANT: Stitch with neighboring chunks
+          this.stitchChunkWithNeighbors(chunk, x, y);
+
+          this.loadingChunks.delete(key);
           loading--;
           processNext(); // Process next chunk
         })
@@ -541,18 +529,7 @@ export default class TerrainManager {
     }
 
     // Then start loading first ring of surrounding chunks asynchronously
-    console.log('Now loading surrounding chunks with lower LOD');
     this.loadSurroundingChunksAsync(validChunkX, validChunkY);
-
-    // Add debug marker at origin
-    const centerMarker = MeshBuilder.CreateBox('centerMarker', { size: 15 }, this.scene);
-    centerMarker.position = new Vector3(0, 20, 0); // Above origin
-    const centerMat = new StandardMaterial('centerMat', this.scene);
-    centerMat.diffuseColor = new Color3(1, 1, 0); // Yellow
-    centerMat.emissiveColor = new Color3(0.5, 0.5, 0);
-    centerMarker.material = centerMat;
-
-    console.log('Added debug marker at origin (0,0,0)');
 
     // Wait just long enough for raycast to succeed, but don't wait for all chunks
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -630,131 +607,6 @@ export default class TerrainManager {
     }
   }
 
-  /**
-   * Load surrounding chunks with explicit LOD control for teleportation
-   */
-  public loadSurroundingChunksWithLOD(centerX: number, centerY: number): void {
-    console.log(`Loading surrounding chunks around (${centerX}, ${centerY}) with LOD control`);
-
-    // Track chunks to load with their LODs
-    const chunksToLoad: Array<{ x: number; y: number; lod: number }> = [];
-
-    // Add surrounding chunks with different LODs based on distance
-    for (let ring = 1; ring <= this.renderDistance; ring++) {
-      // For each ring around the center, assign appropriate LOD
-      // Ring 1 (adjacent) = LOD 1 (medium quality)
-      // Ring 2 = LOD 2 (low quality)
-      // Ring 3+ = LOD 3 (lowest quality)
-      const ringLOD = Math.min(ring, 3);
-
-      // Top and bottom rows of this ring
-      for (let dx = -ring; dx <= ring; dx++) {
-        // Top row
-        const topX = centerX + dx;
-        const topY = centerY - ring;
-
-        // Bottom row
-        const bottomX = centerX + dx;
-        const bottomY = centerY + ring;
-
-        // Add if within world bounds and not already loaded
-        if (topX >= 0 && topX < 144 && topY >= 0 && topY < 72) {
-          chunksToLoad.push({ x: topX, y: topY, lod: ringLOD });
-        }
-
-        if (
-          bottomX >= 0 &&
-          bottomX < 144 &&
-          bottomY >= 0 &&
-          bottomY < 72 &&
-          !(bottomX === topX && bottomY === topY)
-        ) {
-          // Avoid duplicates
-          chunksToLoad.push({ x: bottomX, y: bottomY, lod: ringLOD });
-        }
-      }
-
-      // Left and right columns of this ring (excluding corners already added)
-      for (let dy = -ring + 1; dy <= ring - 1; dy++) {
-        // Left column
-        const leftX = centerX - ring;
-        const leftY = centerY + dy;
-
-        // Right column
-        const rightX = centerX + ring;
-        const rightY = centerY + dy;
-
-        // Add if within world bounds and not already loaded
-        if (leftX >= 0 && leftX < 144 && leftY >= 0 && leftY < 72) {
-          chunksToLoad.push({ x: leftX, y: leftY, lod: ringLOD });
-        }
-
-        if (
-          rightX >= 0 &&
-          rightX < 144 &&
-          rightY >= 0 &&
-          rightY < 72 &&
-          !(rightX === leftX && rightY === leftY)
-        ) {
-          // Avoid duplicates
-          chunksToLoad.push({ x: rightX, y: rightY, lod: ringLOD });
-        }
-      }
-    }
-
-    // Process chunks in small batches to avoid freezing
-    const processBatch = async (startIndex: number, batchSize: number) => {
-      const endIndex = Math.min(startIndex + batchSize, chunksToLoad.length);
-
-      console.log(
-        `Processing terrain batch ${startIndex}-${endIndex - 1} of ${chunksToLoad.length} chunks`
-      );
-
-      // Process this batch
-      for (let i = startIndex; i < endIndex; i++) {
-        const { x, y, lod } = chunksToLoad[i];
-
-        // Skip if already loaded
-        if (this.loadedChunks.has(`${x}_${y}`)) continue;
-
-        try {
-          // Create chunk with specific LOD
-          const chunk = new TerrainChunk(x, y, this.chunkSize, this.scene);
-          chunk.setLOD(lod);
-
-          // Lock this LOD
-          this.lockChunkLOD(x, y, lod);
-
-          // Generate the chunk
-          await chunk.generate();
-
-          // Calculate position
-          const globalChunkPos = new Vector3(x * this.chunkSize, 0, y * this.chunkSize);
-          const enginePos = WorldManager.toEngine(globalChunkPos);
-          chunk.setPosition(enginePos);
-
-          // Add to loaded chunks
-          this.loadedChunks.set(`${x}_${y}`, chunk);
-
-          // Stitch with neighbors
-          this.stitchChunkWithNeighbors(chunk, x, y);
-        } catch (e) {
-          console.warn(`Failed to load chunk at (${x}, ${y}):`, e);
-        }
-      }
-
-      // Process next batch if more chunks remain
-      if (endIndex < chunksToLoad.length) {
-        setTimeout(() => {
-          processBatch(endIndex, batchSize);
-        }, 50); // Small delay between batches
-      }
-    };
-
-    // Start processing with small batches
-    processBatch(0, 3);
-  }
-
   public async clearAllChunks(): Promise<void> {
     console.log('Clearing all terrain chunks');
 
@@ -766,7 +618,6 @@ export default class TerrainManager {
     // Clear tracking collections
     this.loadedChunks.clear();
     this.loadingChunks.clear();
-    this.lockedLODs.clear();
 
     // Reset update timestamp
     this.lastChunkUpdate = 0;
