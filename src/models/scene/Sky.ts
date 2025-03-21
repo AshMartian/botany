@@ -1,12 +1,12 @@
-import { ParticleSystem, Texture, Color4 } from '@babylonjs/core'
+import { ParticleSystem, Texture, Color4 } from '@babylonjs/core';
 
 export default class Sky {
-  static init () {
-    const scene = globalThis.scene
-    const particleSystem = new ParticleSystem("particles", 1000, scene);
+  static init() {
+    const scene = globalThis.scene;
+    const particleSystem = new ParticleSystem('particles', 1000, scene);
     particleSystem.particleTexture = new Texture('/resources/graphics/textures/star.png', scene);
 
-    particleSystem.emitter = scene.getMeshById('Ship')
+    particleSystem.emitter = scene.getMeshById('Ship');
 
     particleSystem.color1 = new Color4(0.7, 0.8, 1.0, 1.0);
     particleSystem.color2 = new Color4(0.2, 0.5, 1.0, 1.0);
@@ -22,7 +22,7 @@ export default class Sky {
     particleSystem.preWarmStepOffset = 100;
     particleSystem.preWarmCycles = 1000;
 
-    const sphereEmitter= particleSystem.createSphereEmitter(100);
+    const sphereEmitter = particleSystem.createSphereEmitter(100);
     sphereEmitter.radiusRange = 0;
 
     particleSystem.minEmitPower = 0;

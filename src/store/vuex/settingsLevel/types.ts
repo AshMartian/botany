@@ -1,6 +1,6 @@
-import { Field } from '@/models/storage/Settings'
+import { Field } from '@/models/storage/Settings';
 
 export interface SettingsLevel {
-  fields: Array<Field>,
-  open: boolean
+  fields: Array<Field>;
+  open: boolean;
 }

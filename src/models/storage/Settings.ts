@@ -9,73 +9,73 @@ export const Settings = {
     {
       name: 'music',
       value: true,
-      label: 'Music'
+      label: 'Music',
     },
     {
       name: 'sound',
       value: true,
-      label: 'Sound'
+      label: 'Sound',
     },
     {
       name: 'dev_mode',
       value: false,
-      label: 'Dev mode'
+      label: 'Dev mode',
     },
     {
       name: 'show_fps',
       value: false,
-      label: 'Show fps'
-    }
+      label: 'Show fps',
+    },
   ],
   validateFieldName(name: string) {
-    const field = this.fields.find((field: Field) => field.name == name)
+    const field = this.fields.find((field: Field) => field.name == name);
 
     if (!field) {
-      throw 'Error setting field'
+      throw 'Error setting field';
     }
 
-    return true
+    return true;
   },
-  setValueByName (name: string, value: any) {
-    this.validateFieldName(name)
-    const fields = this.getFields()
+  setValueByName(name: string, value: any) {
+    this.validateFieldName(name);
+    const fields = this.getFields();
 
     const settings = fields.map((field: Field) => {
       if (field.name == name) {
-        field.value = value
+        field.value = value;
       }
 
-      return field
-    })
+      return field;
+    });
 
-    localStorage.setItem('settings', JSON.stringify(settings))
+    localStorage.setItem('settings', JSON.stringify(settings));
 
-    return true
+    return true;
   },
-  getValueByName (name: string) {
-    const fields = this.getFields()
-    const field = fields.find((field: Field) => field.name == name)
+  getValueByName(name: string) {
+    const fields = this.getFields();
+    const field = fields.find((field: Field) => field.name == name);
 
     if (!field) {
-      throw 'Error setting field'
+      throw 'Error setting field';
     }
 
-    return field.value
+    return field.value;
   },
-  getFields () {
-    const settingsStorage = localStorage.getItem('settings')
+  getFields() {
+    const settingsStorage = localStorage.getItem('settings');
     if (settingsStorage) {
-      const settings = JSON.parse(String(settingsStorage))
-      return this.fields.map(field => {
-        const oldField = settings.find((settingField: any) => settingField.name == field.name)
+      const settings = JSON.parse(String(settingsStorage));
+      return this.fields.map((field) => {
+        const oldField = settings.find((settingField: any) => settingField.name == field.name);
         if (oldField) {
-          field.value = oldField.value
+          field.value = oldField.value;
         }
 
-        return field
-      })
+        return field;
+      });
     }
 
-    return this.fields
-  }
-}
+    return this.fields;
+  },
+};

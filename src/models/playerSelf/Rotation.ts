@@ -1,5 +1,5 @@
-import { Mesh, Vector3, Scene as BabylonScene } from "@babylonjs/core";
-import { Forward } from "@/store/types";
+import { Mesh, Vector3, Scene as BabylonScene } from '@babylonjs/core';
+import { Forward } from '@/store/types';
 
 export default class Rotation {
   private mesh: Mesh | null = null;
@@ -39,39 +39,39 @@ export default class Rotation {
 
       // Move towards the target rotation
       this.currentRotation += diff * this.rotationSpeed;
-      
+
       // Normalize current rotation
       if (this.currentRotation > Math.PI) this.currentRotation -= 2 * Math.PI;
       if (this.currentRotation < -Math.PI) this.currentRotation += 2 * Math.PI;
-      
+
       // Apply rotation
       this.mesh.rotation.y = this.currentRotation;
     });
   }
 
-  rotate(forward: Forward, direction: "left" | "right") {
+  rotate(forward: Forward, direction: 'left' | 'right') {
     if (!this.mesh) return;
 
     // Get current forward direction
     const currentForward = new Vector3(
-      (forward.right ? 1 : 0) - (forward.left ? 1 : 0), 
-      0, 
+      (forward.right ? 1 : 0) - (forward.left ? 1 : 0),
+      0,
       (forward.front ? 1 : 0) - (forward.back ? 1 : 0)
     );
-    
+
     // Calculate current angle in radians
     const currentAngle = Math.atan2(currentForward.z, currentForward.x);
-    
+
     // Determine rotation amount based on direction
-    const rotationAmount = direction === "left" ? Math.PI / 2 : -Math.PI / 2;
-    
+    const rotationAmount = direction === 'left' ? Math.PI / 2 : -Math.PI / 2;
+
     // Calculate new target rotation
     this.targetRotation = currentAngle + rotationAmount;
-    
+
     // Normalize target rotation
     if (this.targetRotation > Math.PI) this.targetRotation -= 2 * Math.PI;
     if (this.targetRotation < -Math.PI) this.targetRotation += 2 * Math.PI;
-    
+
     // Start rotation animation
     this.isRotating = true;
   }
@@ -79,8 +79,8 @@ export default class Rotation {
   // Calculate the angle between the forward vector and a given direction
   private calculateRelativeAngle(forward: Forward, angle: number): number {
     const forwardVector = new Vector3(
-      (forward.right ? 1 : 0) - (forward.left ? 1 : 0), 
-      0, 
+      (forward.right ? 1 : 0) - (forward.left ? 1 : 0),
+      0,
       (forward.front ? 1 : 0) - (forward.back ? 1 : 0)
     );
     const currentAngle = Math.atan2(forwardVector.z, forwardVector.x);
@@ -90,10 +90,10 @@ export default class Rotation {
   // Set the rotation directly to a specific angle relative to the forward direction
   setAngle(forward: Forward, angle: number, step = 1) {
     if (!this.mesh || !this.mesh.rotation) {
-      console.warn("Rotation.setAngle called but mesh or rotation is not ready");
+      console.warn('Rotation.setAngle called but mesh or rotation is not ready');
       return; // Early return to prevent error
     }
-    
+
     this.mesh.rotation.y = step * this.calculateRelativeAngle(forward, angle);
   }
 

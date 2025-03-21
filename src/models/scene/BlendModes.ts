@@ -1,5 +1,5 @@
-import { Engine, Mesh } from '@babylonjs/core'
-import { isNumber } from 'lodash'
+import { Engine, Mesh } from '@babylonjs/core';
+import { isNumber } from 'lodash';
 
 export default class BlendModes {
   static init() {
@@ -14,22 +14,22 @@ export default class BlendModes {
       'ALPHA_PREMULTIPLIED',
       'ALPHA_PREMULTIPLIED_PORTERDUFF',
       'ALPHA_INTERPOLATE',
-      'ALPHA_SCREENMODE'
-    ]
+      'ALPHA_SCREENMODE',
+    ];
 
-    alphaTags.forEach(tag => {
-      const meshes = globalThis.scene.getMeshesByTags(tag.toLowerCase())
+    alphaTags.forEach((tag) => {
+      const meshes = globalThis.scene.getMeshesByTags(tag.toLowerCase());
 
       meshes.forEach((mesh: Mesh) => {
         if (mesh.material) {
-          const type = Engine[tag]
+          const type = Engine[tag];
 
           if (isNumber(type)) {
-            mesh.material.alphaMode = type
-            mesh.material.transparencyMode = 2
+            mesh.material.alphaMode = type;
+            mesh.material.transparencyMode = 2;
           }
         }
-      })
-    })
+      });
+    });
   }
 }

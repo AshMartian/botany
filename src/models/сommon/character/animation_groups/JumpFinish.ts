@@ -1,34 +1,34 @@
-import { AnimationGroup } from '@babylonjs/core'
-import { AnimationGroupInterface } from './AnimationGroupInterface'
+import { AnimationGroup } from '@babylonjs/core';
+import { AnimationGroupInterface } from './AnimationGroupInterface';
 
 export default class JumpFinish implements AnimationGroupInterface {
-  animation: AnimationGroup | null
-  playerId: string
-  weight: number
-  autoPlayLoop: boolean
-  intervalId: number | null
-  name: string
+  animation: AnimationGroup | null;
+  playerId: string;
+  weight: number;
+  autoPlayLoop: boolean;
+  intervalId: number | null;
+  name: string;
 
-  constructor (playerId: string) {
-    this.playerId = playerId
-    this.weight = 0
-    this.autoPlayLoop = false
-    this.intervalId = null
-    this.name = 'JumpFinish'
+  constructor(playerId: string) {
+    this.playerId = playerId;
+    this.weight = 0;
+    this.autoPlayLoop = false;
+    this.intervalId = null;
+    this.name = 'JumpFinish';
 
-    this.animation = scene.getAnimationGroupByName('JumpFinish_' + playerId)
+    this.animation = scene.getAnimationGroupByName('JumpFinish_' + playerId);
 
-    this.setAnimations()
+    this.setAnimations();
   }
 
-  setAnimations () {
+  setAnimations() {
     if (!this.animation) {
-      console.error('Not find JumpFinish animation')
-      return
+      console.error('Not find JumpFinish animation');
+      return;
     }
-    
-    this.animation.name = 'JumpFinish_' + this.playerId
-    this.animation.setWeightForAllAnimatables(0)
-    this.animation.stop()
+
+    this.animation.name = 'JumpFinish_' + this.playerId;
+    this.animation.setWeightForAllAnimatables(0);
+    this.animation.stop();
   }
 }

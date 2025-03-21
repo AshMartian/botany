@@ -1,10 +1,10 @@
-import { State, Player, Forward, SyncData } from "./types";
-import { isEqual } from "lodash";
-import { Color3 } from "@babylonjs/core";
+import { State, Player, Forward, SyncData } from './types';
+import { isEqual } from 'lodash';
+import { Color3 } from '@babylonjs/core';
 
 const playerExample: Player = {
-  id: "new",
-  character: "",
+  id: 'new',
+  character: '',
   skinColor: Color3.Random(),
   points: 0,
   move: {
@@ -23,7 +23,7 @@ const playerExample: Player = {
     jumpStart: false,
     jumpRunning: false,
     speed: 0,
-    speedType: "Idle",
+    speedType: 'Idle',
     speedGravity: 0,
     syncData: {
       position: { x: 0, y: 0, z: 0 },
@@ -58,14 +58,12 @@ export class Store {
   }
 
   addPlayer(playerId: string, skinColor: Color3) {
-    const playerCheck = this.state.players.find(
-      (player) => player.id === playerId
-    );
+    const playerCheck = this.state.players.find((player) => player.id === playerId);
 
     if (playerCheck === undefined) {
       const newPlayer = JSON.parse(JSON.stringify(playerExample));
       newPlayer.id = playerId;
-      newPlayer.character = "SpaceGirl.glb";
+      newPlayer.character = 'SpaceGirl.glb';
       newPlayer.skinColor = skinColor;
 
       this.state.players.push(newPlayer);
@@ -74,7 +72,7 @@ export class Store {
         this.state.selfPlayer = newPlayer;
       }
 
-      this.notifySubscribers(playerId, "addPlayer", newPlayer);
+      this.notifySubscribers(playerId, 'addPlayer', newPlayer);
       this.notifyAddPlayerSubscribers(playerId, newPlayer);
     }
   }
@@ -83,7 +81,7 @@ export class Store {
     const player = this.state.players.find((player) => player.id === playerId);
 
     if (player === undefined) {
-      throw "Player not found";
+      throw 'Player not found';
     }
 
     return player;
@@ -95,7 +93,7 @@ export class Store {
 
   getSelfPlayer() {
     if (this.state.selfPlayer === undefined) {
-      throw "Player not set";
+      throw 'Player not set';
     }
 
     return this.state.selfPlayer;
@@ -103,7 +101,7 @@ export class Store {
 
   getSelfPlayerId() {
     if (this.state.selfPlayerId === undefined) {
-      throw "PlayerID not set";
+      throw 'PlayerID not set';
     }
 
     return this.state.selfPlayerId;
@@ -113,7 +111,7 @@ export class Store {
     const player = this.getPlayer(playerId);
     player.points += count;
 
-    this.notifySubscribers(playerId, "points", player.points);
+    this.notifySubscribers(playerId, 'points', player.points);
     this.setSprint(playerId, true);
   }
 
@@ -126,7 +124,7 @@ export class Store {
     const player = this.getPlayer(playerId);
     player.points -= count;
 
-    this.notifySubscribers(playerId, "points", player.points);
+    this.notifySubscribers(playerId, 'points', player.points);
 
     if (player.points <= 0) {
       this.setSprint(playerId, false);
@@ -142,12 +140,7 @@ export class Store {
   }
 
   setForward(playerId: string, forward: Forward) {
-    forward.isMoving = !(
-      !forward.left &&
-      !forward.right &&
-      !forward.back &&
-      !forward.front
-    );
+    forward.isMoving = !(!forward.left && !forward.right && !forward.back && !forward.front);
 
     const player = this.getPlayer(playerId);
     const oldForward = player.move.forward;
@@ -155,7 +148,7 @@ export class Store {
 
     if (!equal) {
       player.move.forward = { ...forward };
-      this.notifySubscribers(playerId, "forward", player.move.forward);
+      this.notifySubscribers(playerId, 'forward', player.move.forward);
     }
   }
 
@@ -166,7 +159,7 @@ export class Store {
       player.move.rotate.x = x;
       player.move.rotate.y = y;
 
-      this.notifySubscribers(playerId, "rotate", player.move.rotate);
+      this.notifySubscribers(playerId, 'rotate', player.move.rotate);
     }
   }
 
@@ -175,7 +168,7 @@ export class Store {
 
     if (player.move.jump !== jump) {
       player.move.jump = jump;
-      this.notifySubscribers(playerId, "jump", jump);
+      this.notifySubscribers(playerId, 'jump', jump);
     }
   }
 
@@ -183,11 +176,11 @@ export class Store {
     const player = this.getPlayer(playerId);
     player.move.jumpStart = true;
 
-    this.notifySubscribers(playerId, "jumpStart", true);
+    this.notifySubscribers(playerId, 'jumpStart', true);
 
     setTimeout(() => {
       player.move.jumpStart = false;
-      this.notifySubscribers(playerId, "jumpStart", false);
+      this.notifySubscribers(playerId, 'jumpStart', false);
     }, 200);
   }
 
@@ -202,7 +195,7 @@ export class Store {
     if (player.move.isFlying !== isFlying) {
       player.move.isFlying = isFlying;
 
-      this.notifySubscribers(playerId, "isFlying", isFlying);
+      this.notifySubscribers(playerId, 'isFlying', isFlying);
     }
   }
 
@@ -211,7 +204,7 @@ export class Store {
 
     if (player.move.speedType !== type) {
       player.move.speedType = type;
-      this.notifySubscribers(playerId, "speedType", type);
+      this.notifySubscribers(playerId, 'speedType', type);
     }
   }
 
@@ -220,7 +213,7 @@ export class Store {
 
     if (player.move.speed !== speed) {
       player.move.speed = speed;
-      this.notifySubscribers(playerId, "speed", speed);
+      this.notifySubscribers(playerId, 'speed', speed);
     }
   }
 
@@ -231,7 +224,7 @@ export class Store {
 
     if (!equal) {
       player.move.forward.sprint = sprint;
-      this.notifySubscribers(playerId, "forward", player.move.forward);
+      this.notifySubscribers(playerId, 'forward', player.move.forward);
     }
   }
 
@@ -240,7 +233,7 @@ export class Store {
 
     if (player.move.speedGravity !== speed) {
       player.move.speedGravity = speed;
-      this.notifySubscribers(playerId, "speed", speed);
+      this.notifySubscribers(playerId, 'speed', speed);
     }
   }
 
@@ -250,7 +243,7 @@ export class Store {
 
     if (!equal) {
       player.move.syncData = data;
-      this.notifySubscribers(playerId, "syncData", data);
+      this.notifySubscribers(playerId, 'syncData', data);
     }
   }
 
@@ -261,7 +254,7 @@ export class Store {
   setPlayerGlobalPosition(position: { x: number; z: number }): void {
     // Validate position data before processing
     if (isNaN(position.x) || isNaN(position.z)) {
-      console.error("Invalid position data:", position);
+      console.error('Invalid position data:', position);
       return;
     }
 
@@ -287,13 +280,13 @@ export class Store {
       };
 
       try {
-        localStorage.setItem("playerGlobalPosition", JSON.stringify(saveData));
+        localStorage.setItem('playerGlobalPosition', JSON.stringify(saveData));
 
         if (window.store?.debug) {
-          console.log("Saved global position:", normalizedPosition);
+          console.log('Saved global position:', normalizedPosition);
         }
       } catch (e) {
-        console.warn("Failed to save player position to localStorage:", e);
+        console.warn('Failed to save player position to localStorage:', e);
       }
     }
   }
@@ -301,7 +294,7 @@ export class Store {
   getPlayerGlobalPosition(): { x: number; z: number } | undefined {
     // Try to load from localStorage if not in state
     if (!this.state.globalPosition) {
-      const saved = localStorage.getItem("playerGlobalPosition");
+      const saved = localStorage.getItem('playerGlobalPosition');
       if (saved) {
         try {
           const saveData = JSON.parse(saved);
@@ -310,7 +303,7 @@ export class Store {
 
           // Add null check before accessing properties
           if (!this.state.globalPosition) {
-            console.warn("Invalid saved position format");
+            console.warn('Invalid saved position format');
             return undefined;
           }
 
@@ -321,11 +314,11 @@ export class Store {
             this.state.globalPosition.z < 0 ||
             this.state.globalPosition.z > 1
           ) {
-            console.warn("Invalid saved position, using defaults");
+            console.warn('Invalid saved position, using defaults');
             this.state.globalPosition = { x: 0.5, z: 0.5 };
           }
         } catch (e) {
-          console.warn("Failed to parse saved position", e);
+          console.warn('Failed to parse saved position', e);
         }
       }
     }

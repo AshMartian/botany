@@ -1,19 +1,18 @@
-import { Settings } from '@/models/storage/Settings'
-import { Inspector } from '@babylonjs/inspector'
-import '@babylonjs/node-editor'
-
+import { Settings } from '@/models/storage/Settings';
+import { Inspector } from '@babylonjs/inspector';
+import '@babylonjs/node-editor';
 
 export default class DevMode {
-  constructor () {
+  constructor() {
     if (Settings.getValueByName('dev_mode')) {
-      this.enabled()
+      this.enabled();
     }
   }
-  
-  enabled () {
-    const globalRoot = document.getElementsByTagName('body')[0]
+
+  enabled() {
+    const globalRoot = document.getElementsByTagName('body')[0];
     if (globalRoot) {
-      Inspector.Show(scene, {overlay: true, globalRoot: globalRoot})
+      Inspector.Show(scene, { overlay: true, globalRoot: globalRoot });
     }
   }
 }

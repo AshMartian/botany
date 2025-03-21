@@ -130,10 +130,7 @@
     "zoom": 0.6302470421610001
   },
   "customType": "BABYLON.NodeMaterial",
-  "outputNodes": [
-    54,
-    65
-  ],
+  "outputNodes": [54, 65],
   "blocks": [
     {
       "customType": "BABYLON.VertexOutputBlock",
@@ -559,11 +556,7 @@
       "convertToGammaSpace": false,
       "convertToLinearSpace": false,
       "valueType": "BABYLON.Color3",
-      "value": [
-        1,
-        0,
-        0
-      ]
+      "value": [1, 0, 0]
     },
     {
       "customType": "BABYLON.LightBlock",

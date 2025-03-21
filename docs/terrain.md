@@ -8,7 +8,7 @@ We have heightmaps patches available at https://ashmartian.com/mars/patch_Z_X.ra
 The Mars heightmap is 144x72 patches
 X/Z start at 0
 
-Each patch is an int 36k TIFF and is 71x71 resolution.
+Each patch is an int 36k TIFF.
 
 The heightmap images are low resolution, our goal is to get a scale that is close to the actual Mars terrain, for this to look good, we'll need to add some noise to the terrain. Let's render each terrain chunk as 768x768, and fill in the resolution with noise that is dynamic based on the terrain features. (Flat areas should be more noisy, and steep areas smooth)
 

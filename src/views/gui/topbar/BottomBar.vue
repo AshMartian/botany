@@ -5,14 +5,14 @@
 </template>
 
 <script>
-import MapButton from '@/views/gui/topbar/MapButton'
+import MapButton from '@/views/gui/topbar/MapButton';
 
 export default {
   components: { MapButton },
   methods: {
     openMenu() {
-      this.$store.commit('SET_OPEN_MENU', true)
-    }
-  }
-}
+      this.$store.commit('SET_OPEN_MENU', true);
+    },
+  },
+};
 </script>

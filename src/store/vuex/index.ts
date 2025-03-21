@@ -1,8 +1,8 @@
-import Vuex, { StoreOptions } from 'vuex'
-import {Level, RootState} from '@/store/vuex/types'
-import { settingsLevel } from '@/store/vuex/settingsLevel'
-import { level } from '@/store/vuex/level'
-import MobileDetect from 'mobile-detect'
+import Vuex, { StoreOptions } from 'vuex';
+import { Level, RootState } from '@/store/vuex/types';
+import { settingsLevel } from '@/store/vuex/settingsLevel';
+import { level } from '@/store/vuex/level';
+import MobileDetect from 'mobile-detect';
 
 const store: StoreOptions<RootState> = {
   strict: false,
@@ -17,24 +17,24 @@ const store: StoreOptions<RootState> = {
         hdr: {
           rotation: 0,
           intensity: 1,
-          gammaSpace: false
+          gammaSpace: false,
         },
         glow: {
           mainTextureFixedSize: 1054,
           blurKernelSize: 70,
-          intensity: 0.4
+          intensity: 0.4,
         },
         fog: {
           color: {
             r: 0.208,
             g: 0.337,
-            b: 0.510
+            b: 0.51,
           },
           density: 0.01,
-          mode: 1
+          mode: 1,
         },
         directionalLight: {
-          intensity: 1
+          intensity: 1,
         },
         shadowGenerator: {
           mapSize: 2064,
@@ -45,37 +45,37 @@ const store: StoreOptions<RootState> = {
           stabilizeCascades: false,
           cascadeBlendPercentage: 0,
           bias: 0.001,
-          filteringQuality: 0
-        }
-      }
-    }
+          filteringQuality: 0,
+        },
+      },
+    },
   },
   mutations: {
-    SET_PAGE (state, payload) {
-      state.currentPage = payload
+    SET_PAGE(state, payload) {
+      state.currentPage = payload;
     },
-    SET_LEVEL (state, levelId) {
-      state.levelId = levelId
+    SET_LEVEL(state, levelId) {
+      state.levelId = levelId;
     },
-    SET_LEVELS (state, levels) {
-      state.levels = []
+    SET_LEVELS(state, levels) {
+      state.levels = [];
 
       levels.forEach((level: Level) => {
-        level.finish = false
-        state.levels.push(level)
-      })
+        level.finish = false;
+        state.levels.push(level);
+      });
     },
-    SET_PASSWORD (state, password) {
-      state.password = password
+    SET_PASSWORD(state, password) {
+      state.password = password;
     },
     SET_ENVIRONMENT(state, environment) {
-      state.settings.environment = environment
-    }
+      state.settings.environment = environment;
+    },
   },
   modules: {
     level,
-    settingsLevel
+    settingsLevel,
   },
-}
+};
 
-export default new Vuex.Store<RootState>(store)
+export default new Vuex.Store<RootState>(store);

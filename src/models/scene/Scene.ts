@@ -6,11 +6,11 @@ import {
   SceneOptimizer,
   SceneOptimizerOptions,
   ArcRotateCamera,
-  Vector3
-} from "@babylonjs/core";
+  Vector3,
+} from '@babylonjs/core';
 
-import storeVuex from "@/store/vuex";
-import Environment from "@/models/scene/Environment";
+import storeVuex from '@/store/vuex';
+import Environment from '@/models/scene/Environment';
 
 export default class GameScene {
   babylonScene: BabylonScene;
@@ -36,29 +36,29 @@ export default class GameScene {
   private createDefaultCamera(): void {
     // Create and position a default camera
     const camera = new ArcRotateCamera(
-      "defaultCamera",
+      'defaultCamera',
       -Math.PI / 2,
       Math.PI / 2.5,
       15,
       Vector3.Zero(),
       this.babylonScene
     );
-    
+
     // Position camera above terrain
     camera.position = new Vector3(0, 50, -20);
     camera.attachControl(this.engine.getRenderingCanvas(), true);
     camera.minZ = 0.1;
     camera.speed = 0.5;
-    
+
     // Set as active camera
     this.babylonScene.activeCamera = camera;
-    
+
     // Enable debug layer for development
     this.babylonScene.debugLayer.show();
   }
 
   async load(callbackLoad: () => void) {
-    window.addEventListener("resize", () => {
+    window.addEventListener('resize', () => {
       this.engine.resize();
     });
 
@@ -70,26 +70,23 @@ export default class GameScene {
     if (storeVuex.state.levelId === 1) {
       try {
         callbackLoad();
-        const divFps = document.getElementById("fps_counter") as HTMLElement;
+        const divFps = document.getElementById('fps_counter') as HTMLElement;
         this.optimize();
 
         this.engine.runRenderLoop(() => {
           this.babylonScene.render();
-          divFps.innerHTML = this.engine.getFps().toFixed() + " fps";
+          divFps.innerHTML = this.engine.getFps().toFixed() + ' fps';
         });
       } catch (e) {
         console.error(e);
       }
     } else {
-      const fileName = "map.babylon";
+      const fileName = 'map.babylon';
       const filePath =
-        process.env.VUE_APP_RESOURCES_PATH +
-        "graphics/level_" +
-        storeVuex.state.levelId +
-        "/";
+        process.env.VUE_APP_RESOURCES_PATH + 'graphics/level_' + storeVuex.state.levelId + '/';
 
       const timestamp = 1;
-      const filePathWithTimestamp = fileName + "?timestamp=" + timestamp;
+      const filePathWithTimestamp = fileName + '?timestamp=' + timestamp;
 
       SceneLoader.Append(
         filePath,
@@ -98,14 +95,12 @@ export default class GameScene {
         () => {
           try {
             callbackLoad();
-            const divFps = document.getElementById(
-              "fps_counter"
-            ) as HTMLElement;
+            const divFps = document.getElementById('fps_counter') as HTMLElement;
             this.optimize();
 
             this.engine.runRenderLoop(() => {
               this.babylonScene.render();
-              divFps.innerHTML = this.engine.getFps().toFixed() + " fps";
+              divFps.innerHTML = this.engine.getFps().toFixed() + ' fps';
             });
           } catch (e) {
             console.error(e);
@@ -131,10 +126,10 @@ export default class GameScene {
   }
 
   setEnvironment() {
-    fetch("./resources/graphics/environment.json")
+    fetch('./resources/graphics/environment.json')
       .then((response) => response.json())
       .then((json) => {
-        storeVuex.commit("SET_ENVIRONMENT", json);
+        storeVuex.commit('SET_ENVIRONMENT', json);
 
         const environment = new Environment();
         environment.setupHDR();
