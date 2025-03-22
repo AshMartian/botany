@@ -1,14 +1,13 @@
 import {
   Vector3,
-  Mesh,
   Scene as BabylonScene,
   MeshBuilder,
   Color3,
   StandardMaterial,
-  DynamicTexture,
 } from '@babylonjs/core';
 import TerrainChunk from './TerrainChunk';
 import WorldManager from './WorldManager';
+import store from '@/store/store';
 
 declare global {
   interface Window {
@@ -30,102 +29,132 @@ export interface TerrainChunkDTO {
 }
 
 export default class TerrainManager {
-  public loadedChunks: Map<string, TerrainChunk>;
+  // Core chunk storage
+  private loadedChunks: Map<string, TerrainChunk>;
   private loadingChunks: Set<string>;
+
+  // Scene reference and configuration
   private scene: BabylonScene;
-  public chunkSize: number;
+  private chunkSize: number;
   private renderDistance: number;
-  private lastChunkUpdate = 0;
-  public _hasInitialized = false;
-  public isTeleporting = false;
+
+  // Tracking state
+  private lastPlayerChunkX = -999;
+  private lastPlayerChunkY = -999;
+  private initialized = false;
+  private _isTeleporting = false;
   public debugMode = false; // Enable for visualization
 
-  public get hasInitialized(): boolean {
-    return this._hasInitialized;
-  }
+  // Performance and safety limits
+  private maxConcurrentChunks = 36; // Safety limit - 6x6 grid maximum
+  private chunkLoadThrottleTime = 200; // ms between chunk batches
+  private lastUpdateTime = 0; // Track last update time
+  private debugVerbose = false; // Control verbose logging
 
-  /**
-   * Lock terrain manager during teleportation to prevent automatic updates
-   */
-  public lockForTeleport(isLocked: boolean): void {
-    this.isTeleporting = isLocked;
-  }
+  // Stability controls
+  private chunkStabilizationTimeout: any = null;
+  private mapUpdateTimer: any = null;
+  private loadingLock = false;
+  private lastPlayerPosition: Vector3 | null = null;
+  private maxChunkJumpPerFrame = 1;
 
-  constructor(scene: BabylonScene, chunkSize = 213, renderDistance = 1) {
+  constructor(scene: BabylonScene, chunkSize = 128, renderDistance = 1) {
     this.scene = scene;
     this.loadedChunks = new Map();
     this.loadingChunks = new Set();
     this.chunkSize = chunkSize;
     this.renderDistance = renderDistance;
+
+    console.log(
+      `TerrainManager initialized with chunk size ${chunkSize} and render distance ${renderDistance}`
+    );
   }
 
+  /**
+   * Initialize terrain at a specific global position
+   */
   public async initialize(
     globalPosition: Vector3 = WorldManager.getGlobalPlayerPosition()
   ): Promise<void> {
-    console.log('Initializing terrain at global position:', globalPosition.toString());
+    console.log(`Initializing terrain at global position: ${globalPosition.toString()}`);
 
-    // Ensure we're using the correct global position
-    WorldManager.setGlobalPlayerPosition(globalPosition);
+    // Store global position in world manager
+    // WorldManager.setGlobalPlayerPosition(globalPosition);
 
-    // Calculate chunk coordinates for logging
+    // Calculate chunk coordinates
     const chunkX = Math.floor(globalPosition.x / this.chunkSize);
     const chunkY = Math.floor(globalPosition.z / this.chunkSize);
     console.log(`Initializing terrain around chunk coordinates (${chunkX}, ${chunkY})`);
 
-    // Clear any existing chunks first to ensure clean state
+    // Clear any existing chunks
     await this.clearAllChunks();
 
-    // Load ONLY the center chunk at high resolution and wait for it to be ready
-    const centerChunk = await this.loadPriorityChunk(chunkX, chunkY);
+    try {
+      // Load center chunk first and wait for it
+      const centerChunk = await this.loadChunk(chunkX, chunkY, true);
 
-    if (centerChunk) {
-      console.log('Center chunk loaded successfully at high resolution');
+      if (centerChunk) {
+        console.log(`Center chunk loaded at (${chunkX}, ${chunkY})`);
+        this.lastPlayerChunkX = chunkX;
+        this.lastPlayerChunkY = chunkY;
 
-      // Start loading surrounding chunks in background, but don't wait for them
-      setTimeout(() => {
-        this.loadSurroundingChunksAsync(chunkX, chunkY);
-      }, 500);
-    } else {
-      console.error('Failed to load center chunk - falling back to emergency terrain');
-      // Emergency fallback - create a simple flat plane
+        // Load surrounding chunks without waiting
+        setTimeout(() => this.loadSurroundingChunks(chunkX, chunkY), 100);
+      } else {
+        console.error('Failed to load center chunk - creating emergency terrain');
+        this.createEmergencyTerrain();
+      }
+    } catch (error) {
+      console.error('Error during terrain initialization:', error);
       this.createEmergencyTerrain();
     }
 
-    this._hasInitialized = true;
+    this.initialized = true;
     console.log('Terrain initialization complete');
   }
 
-  // Add a new emergency terrain method
-  private createEmergencyTerrain(): void {
-    console.warn('Creating emergency terrain at origin');
-    const emergencyGround = MeshBuilder.CreateGround(
-      'emergency_terrain',
-      {
-        width: this.chunkSize * 3,
-        height: this.chunkSize * 3,
-      },
-      this.scene
-    );
-
-    const groundMat = new StandardMaterial('emergencyMat', this.scene);
-    groundMat.diffuseColor = new Color3(0.8, 0.4, 0.3); // Mars-like color
-    emergencyGround.material = groundMat;
-    emergencyGround.checkCollisions = true;
-    emergencyGround.isPickable = true;
-  }
-
+  /**
+   * Update chunks based on player position - call this frequently!
+   */
   public updateChunks(playerEnginePosition: Vector3): void {
-    // Skip during teleportation
-    if (this.isTeleporting) return;
+    if (!this.initialized || this._isTeleporting) return;
 
-    // Convert player's engine position to global position for chunk calculations
-    const playerGlobalPos = WorldManager.toVirtual(playerEnginePosition);
+    // Rate limit updates to prevent overloading
+    const now = performance.now();
+    if (now - this.lastUpdateTime < 250) return; // Limit to 4 updates per second max
+    this.lastUpdateTime = now;
 
-    // Calculate player's chunk coordinates
+    // NEW LOGGING: Add detailed position tracking in each update
+    const playerMesh = this.scene.getMeshByName('playerFoot_' + (store.getPlayerId() || ''));
+    if (this.debugVerbose && playerMesh) {
+      console.log(`===== TERRAIN UPDATE =====
+      ENGINE POS: ${playerMesh.position.toString()}
+      GLOBAL POS: ${WorldManager.toGlobal(playerMesh.position).toString()}
+      LOADED CHUNKS: ${this.loadedChunks.size}
+      LOADING CHUNKS: ${this.loadingChunks.size}
+    `);
+    }
+
+    // CRITICAL: Protect against concurrent updates with a lock
+    if (this.loadingLock) {
+      if (this.debugVerbose) console.log('Skipping update - terrain locked');
+      return;
+    }
+
+    // ⭐ IMPORTANT: First, store a consistent copy of the player position to use throughout this method
+    const playerEngineCopy = playerEnginePosition.clone();
+
+    // Convert engine position to global position
+    const playerGlobalPos = WorldManager.toGlobal(playerEngineCopy);
+
+    // Calculate current chunk coordinates
     const playerChunkX = Math.floor(playerGlobalPos.x / this.chunkSize);
     const playerChunkY = Math.floor(playerGlobalPos.z / this.chunkSize);
 
-    // Check if coordinates are valid
+    // Store current position for next frame
+    this.lastPlayerPosition = playerEngineCopy.clone();
+
+    // Sanity check coordinates to catch corrupted positions
     if (
       !isFinite(playerChunkX) ||
       !isFinite(playerChunkY) ||
@@ -134,82 +163,50 @@ export default class TerrainManager {
       playerChunkY < 0 ||
       playerChunkY >= 72
     ) {
-      console.warn('Invalid player chunk coordinates:', playerChunkX, playerChunkY);
-      return;
+      console.error('CRITICAL: Invalid chunk coordinates:', { x: playerChunkX, y: playerChunkY });
+      return; // Skip this update entirely
     }
 
-    // Throttle updates to avoid performance issues
-    const now = Date.now();
-    if (now - this.lastChunkUpdate < 1000) {
-      // Skip if it's been less than 1 second since last update
-      return;
-    }
-    this.lastChunkUpdate = now;
-
-    console.log(`Player is on chunk (${playerChunkX}, ${playerChunkY})`);
-
-    // STEP 1: Make sure center chunk exists at high quality
-    const centerKey = `${playerChunkX}_${playerChunkY}`;
-    if (!this.loadedChunks.has(centerKey) && !this.loadingChunks.has(centerKey)) {
-      this.loadPriorityChunk(playerChunkX, playerChunkY);
+    // Check for too many chunks - emergency cleanup if needed
+    if (this.loadedChunks.size > this.maxConcurrentChunks) {
+      console.warn(
+        `EMERGENCY: Too many chunks (${this.loadedChunks.size}/${this.maxConcurrentChunks}), forcing cleanup`
+      );
+      this.emergencyCleanup(playerChunkX, playerChunkY);
     }
 
-    // STEP 2: Load surrounding chunks (increase from 2 to 4 per update)
-    const surroundingCoords = [];
-    const chunkRadius = Math.min(this.renderDistance, 2); // At most 2 chunks in each direction
-
-    for (let dx = -chunkRadius; dx <= chunkRadius; dx++) {
-      for (let dy = -chunkRadius; dy <= chunkRadius; dy++) {
-        // Skip center chunk (already handled)
-        if (dx === 0 && dy === 0) continue;
-
-        const x = playerChunkX + dx;
-        const y = playerChunkY + dy;
-
-        // Ensure valid coordinates
-        if (x >= 0 && x < 144 && y >= 0 && y < 72) {
-          surroundingCoords.push({
-            x,
-            y,
-            priority: Math.max(Math.abs(dx), Math.abs(dy)), // Prioritize closer chunks
-          });
-        }
-      }
+    // IMPORTANT: Always ensure the current chunk is loaded
+    const currentChunkKey = `${playerChunkX}_${playerChunkY}`;
+    if (!this.loadedChunks.has(currentChunkKey) && !this.loadingChunks.has(currentChunkKey)) {
+      if (this.debugVerbose)
+        console.log(`Current chunk ${currentChunkKey} not loaded, loading immediately`);
+      this.loadChunk(playerChunkX, playerChunkY, true);
     }
 
-    // Sort by priority (closest first)
-    surroundingCoords.sort((a, b) => a.priority - b.priority);
+    // Only update chunk loading/unloading if player moved to a different chunk
+    if (playerChunkX !== this.lastPlayerChunkX || playerChunkY !== this.lastPlayerChunkY) {
+      console.log(
+        `Player moved to new chunk (${playerChunkX}, ${playerChunkY}) from (${this.lastPlayerChunkX}, ${this.lastPlayerChunkY})`
+      );
+      this.lastPlayerChunkX = playerChunkX;
+      this.lastPlayerChunkY = playerChunkY;
 
-    // Load up to 4 chunks per update
-    let loadedCount = 0;
-    for (const { x, y } of surroundingCoords) {
-      const key = `${x}_${y}`;
-      if (!this.loadedChunks.has(key) && !this.loadingChunks.has(key)) {
-        if (loadedCount < 4) {
-          this.loadChunk(x, y);
-          loadedCount++;
-        }
-      }
+      // Set loading lock to prevent concurrent updates
+      this.loadingLock = true;
+      this.loadSurroundingChunks(playerChunkX, playerChunkY);
+      this.unloadDistantChunks(playerChunkX, playerChunkY);
+      this.loadingLock = false;
     }
-
-    // STEP 3: Unload distant chunks (increase distance threshold from 2 to 3)
-    const maxDistance = Math.max(3, this.renderDistance + 1);
-    for (const [key, chunk] of this.loadedChunks.entries()) {
-      const [x, y] = key.split('_').map(Number);
-      const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
-
-      if (distance > maxDistance) {
-        console.log(`Unloading distant chunk at (${x}, ${y}), distance: ${distance}`);
-        chunk.dispose();
-        this.loadedChunks.delete(key);
-      }
-    }
-
-    // Update global player position to ensure future calculations are correct
-    WorldManager.setGlobalPlayerPosition(playerGlobalPos);
   }
 
-  public async loadChunk(x: number, y: number): Promise<TerrainChunk | null> {
+  /**
+   * Load a single terrain chunk
+   */
+  private async loadChunk(
+    x: number,
+    y: number,
+    highPriority = false
+  ): Promise<TerrainChunk | null> {
     // Validate chunk coordinates
     if (x < 0 || x >= 144 || y < 0 || y >= 72) {
       console.error(`Invalid chunk request: ${x},${y}`);
@@ -218,51 +215,54 @@ export default class TerrainManager {
 
     const key = `${x}_${y}`;
 
-    // Check if being loaded
-    if (this.loadingChunks.has(key)) {
-      return null; // Already in progress
+    // Safety check: if this is the last player chunk, prioritize it
+    const isPlayerChunk = x === this.lastPlayerChunkX && y === this.lastPlayerChunkY;
+    if (isPlayerChunk) {
+      highPriority = true;
+      console.log(`Prioritizing player's current chunk: ${key}`);
     }
 
-    console.log(`Loading chunk (${x}, ${y})`);
+    // Skip if already loaded
+    if (this.loadedChunks.has(key)) {
+      return this.loadedChunks.get(key) || null;
+    }
+
+    // If chunk is already loading, return null unless this is high priority
+    if (this.loadingChunks.has(key)) {
+      return null;
+    }
+
+    console.log(`Loading terrain chunk (${x}, ${y})`);
     this.loadingChunks.add(key);
 
     try {
-      // Check for existing mesh and dispose if needed
+      // First clean up any existing mesh with the same name
       const existingMesh = this.scene.getMeshByName(`terrain_chunk_${x}_${y}`);
       if (existingMesh) {
-        console.log(`Found existing terrain mesh for chunk ${x},${y} - disposing`);
+        console.log(`Found existing mesh for chunk (${x}, ${y}) - disposing`);
         if (existingMesh.material) existingMesh.material.dispose();
         existingMesh.dispose(true, true);
-        this.loadedChunks.delete(key);
       }
 
-      // Create the chunk
+      // Create and generate the chunk
       const chunk = new TerrainChunk(x, y, this.chunkSize, this.scene);
-
-      // Generate mesh
       await chunk.generate();
 
-      // Position the chunk precisely
+      // Calculate proper position in global space
       const globalChunkPos = new Vector3(x * this.chunkSize, 0, y * this.chunkSize);
+
+      // Convert to engine coordinates
       const enginePos = WorldManager.toEngine(globalChunkPos);
+
+      // Set position
       chunk.setPosition(enginePos);
 
-      // Add to loaded chunks map
+      // Store in loaded chunks map
       this.loadedChunks.set(key, chunk);
-
-      // Ensure the mesh is in the scene
-      const mesh = chunk.getMesh();
-      if (mesh && !this.scene.meshes.includes(mesh)) {
-        console.log(`Adding terrain mesh ${x},${y} to scene`);
-        this.scene.addMesh(mesh);
-      }
-
-      // IMPORTANT: Stitch with neighboring chunks
-      this.stitchChunkWithNeighbors(chunk, x, y);
 
       return chunk;
     } catch (error) {
-      console.error(`Error generating chunk ${x},${y}:`, error);
+      console.error(`Failed to load chunk (${x}, ${y}):`, error);
       return null;
     } finally {
       this.loadingChunks.delete(key);
@@ -270,295 +270,224 @@ export default class TerrainManager {
   }
 
   /**
-   * Load the priority chunk (the one the player is currently on) at highest resolution
+   * Load chunks surrounding the player in priority order
    */
-  public async loadPriorityChunk(x: number, y: number): Promise<TerrainChunk | null> {
-    // Validate coordinates
-    const validX = Math.max(0, Math.min(143, x));
-    const validY = Math.max(0, Math.min(71, y));
-
-    const key = `${validX}_${validY}`;
-
-    // Otherwise load at highest resolution
-    try {
-      console.log(`Loading priority chunk at (${validX}, ${validY})`);
-
-      // Create new chunk
-      const chunk = new TerrainChunk(validX, validY, this.chunkSize, this.scene);
-
-      // Generate mesh
-      await chunk.generate();
-
-      // Position properly
-      const globalChunkPos = new Vector3(validX * this.chunkSize, 0, validY * this.chunkSize);
-      const enginePos = WorldManager.toEngine(globalChunkPos);
-      chunk.setPosition(enginePos);
-
-      // Store in manager
-      this.loadedChunks.set(key, chunk);
-
-      // IMPORTANT: Stitch with neighboring chunks
-      this.stitchChunkWithNeighbors(chunk, validX, validY);
-
-      return chunk;
-    } catch (error) {
-      console.error(`Failed to load priority chunk at (${validX}, ${validY}):`, error);
-      return null;
+  private loadSurroundingChunks(centerX: number, centerY: number): void {
+    // Avoid loading too many chunks - impose hard limit
+    if (this.loadedChunks.size + this.loadingChunks.size >= this.maxConcurrentChunks) {
+      console.warn(
+        `Too many chunks in process (${this.loadedChunks.size} loaded, ${this.loadingChunks.size} loading), skipping new loads`
+      );
+      return;
     }
+
+    interface ChunkToLoad {
+      x: number;
+      y: number;
+      distance: number;
+    }
+
+    const chunksToLoad: ChunkToLoad[] = [];
+
+    // Use smaller render distance when we have many chunks already
+    const adjustedRenderDistance =
+      this.loadedChunks.size > this.maxConcurrentChunks * 0.7
+        ? Math.min(1, this.renderDistance) // Reduce to 1 when approaching limit
+        : this.renderDistance;
+
+    // Only consider a maximum of 12 new chunks to avoid memory issues
+    const maxNewChunks = 12;
+
+    // First collect chunks that need loading
+    for (let r = 0; r <= adjustedRenderDistance; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) === r) {
+            const x = centerX + dx;
+            const y = centerY + dy;
+
+            // Skip invalid coordinates
+            if (x < 0 || x >= 144 || y < 0 || y >= 72) continue;
+
+            const key = `${x}_${y}`;
+
+            // Skip if already loaded or loading
+            if (!this.loadedChunks.has(key) && !this.loadingChunks.has(key)) {
+              chunksToLoad.push({
+                x,
+                y,
+                distance: Math.max(Math.abs(dx), Math.abs(dy)),
+              });
+
+              // Stop if we hit our limit
+              if (chunksToLoad.length >= maxNewChunks) break;
+            }
+          }
+        }
+        if (chunksToLoad.length >= maxNewChunks) break;
+      }
+      if (chunksToLoad.length >= maxNewChunks) break;
+    }
+
+    // Sort by distance (closest first)
+    chunksToLoad.sort((a, b) => a.distance - b.distance);
+
+    // Only load a few at a time to prevent memory spikes
+    const loadNextBatch = (index = 0) => {
+      if (index >= chunksToLoad.length) return;
+
+      // Only load 2 chunks at a time
+      const batchSize = 2;
+      const batch = chunksToLoad.slice(index, index + batchSize);
+
+      for (const { x, y } of batch) {
+        this.loadChunk(x, y);
+      }
+
+      // Schedule next batch with increased delay
+      setTimeout(() => loadNextBatch(index + batchSize), this.chunkLoadThrottleTime);
+    };
+
+    // Start the first batch
+    loadNextBatch();
   }
 
   /**
    * Unload chunks that are too far from the player
    */
-  // private unloadDistantChunks(playerChunkX: number, playerChunkY: number): void {
-  //   for (const [key, chunk] of this.loadedChunks.entries()) {
-  //     const [x, y] = key.split('_').map(Number);
-  //     const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
+  private unloadDistantChunks(
+    playerChunkX: number,
+    playerChunkY: number,
+    bufferDistance?: number
+  ): void {
+    // Use a safer unloading policy - keep more chunks loaded but be strict about distant ones
+    const coreDistance = 1; // Always keep chunks within 1 unit of player
+    const maxDistance = bufferDistance || this.renderDistance + 1;
 
-  //     if (distance > this.renderDistance + 1) {
-  //       chunk.dispose();
-  //       this.loadedChunks.delete(key);
-  //     }
-  //   }
-  // }
+    console.log(
+      `Unloading chunks outside distance ${maxDistance} from (${playerChunkX}, ${playerChunkY})`
+    );
 
-  private stitchChunkWithNeighbors(chunk: TerrainChunk, x: number, y: number): void {
-    console.log(`Checking neighbors for stitching chunk ${x},${y}`);
-    return;
-    // Debug visualization - uncomment to visualize edges
-    // chunk.visualizeEdges();
+    // Create a map of chunks that must be kept
+    const criticalChunks = new Set<string>();
 
-    // let stitchedAny = false;
+    // Mark critical chunks we must never unload (player chunk + immediate neighbors)
+    for (let dx = -coreDistance; dx <= coreDistance; dx++) {
+      for (let dy = -coreDistance; dy <= coreDistance; dy++) {
+        const x = playerChunkX + dx;
+        const y = playerChunkY + dy;
 
-    // // Left neighbor (-X)
-    // const leftKey = `${x - 1}_${y}`;
-    // if (this.loadedChunks.has(leftKey)) {
-    //   const leftNeighbor = this.loadedChunks.get(leftKey)!;
-    //   console.log(`Stitching ${x},${y} with left neighbor at ${x - 1},${y}`);
-    //   chunk.stitchWithNeighbor(leftNeighbor, 'left');
-    //   leftNeighbor.stitchWithNeighbor(chunk, 'right');
-    //   stitchedAny = true;
-    // }
+        // Skip invalid coordinates
+        if (x < 0 || x >= 144 || y < 0 || y >= 72) continue;
 
-    // // Right neighbor (+X)
-    // const rightKey = `${x + 1}_${y}`;
-    // if (this.loadedChunks.has(rightKey)) {
-    //   const rightNeighbor = this.loadedChunks.get(rightKey)!;
-    //   console.log(`Stitching ${x},${y} with right neighbor at ${x + 1},${y}`);
-    //   chunk.stitchWithNeighbor(rightNeighbor, 'right');
-    //   rightNeighbor.stitchWithNeighbor(chunk, 'left');
-    //   stitchedAny = true;
-    // }
-
-    // // Top neighbor (-Z)
-    // const topKey = `${x}_${y - 1}`;
-    // if (this.loadedChunks.has(topKey)) {
-    //   const topNeighbor = this.loadedChunks.get(topKey)!;
-    //   console.log(`Stitching ${x},${y} with top neighbor at ${x},${y - 1}`);
-    //   chunk.stitchWithNeighbor(topNeighbor, 'top');
-    //   topNeighbor.stitchWithNeighbor(chunk, 'bottom');
-    //   stitchedAny = true;
-    // }
-
-    // // Bottom neighbor (+Z)
-    // const bottomKey = `${x}_${y + 1}`;
-    // if (this.loadedChunks.has(bottomKey)) {
-    //   const bottomNeighbor = this.loadedChunks.get(bottomKey)!;
-    //   console.log(`Stitching ${x},${y} with bottom neighbor at ${x},${y + 1}`);
-    //   chunk.stitchWithNeighbor(bottomNeighbor, 'bottom');
-    //   bottomNeighbor.stitchWithNeighbor(chunk, 'top');
-    //   stitchedAny = true;
-    // }
-
-    // if (stitchedAny) {
-    //   // After stitching is complete, force this chunk to refresh
-    //   const mesh = chunk.getMesh();
-    //   if (mesh) {
-    //     mesh.refreshBoundingInfo();
-    //     mesh.computeWorldMatrix(true);
-    //   }
-    // }
-  }
-
-  // Add this method to prioritize loading the center chunk at high resolution
-  public async loadCenterChunkHighRes(): Promise<TerrainChunk | null> {
-    // Get player's global position
-    const playerGlobalPos = WorldManager.getGlobalPlayerPosition();
-
-    // Calculate chunk coordinates
-    const chunkX = Math.floor(playerGlobalPos.x / this.chunkSize);
-    const chunkY = Math.floor(playerGlobalPos.z / this.chunkSize);
-
-    // Clamp to valid ranges
-    const validChunkX = Math.max(0, Math.min(143, chunkX));
-    const validChunkY = Math.max(0, Math.min(71, chunkY));
-
-    const key = `${validChunkX}_${validChunkY}`;
-    console.log(`Loading center chunk (${validChunkX}, ${validChunkY}) at high resolution`);
-
-    try {
-      // Create a new chunk
-      const chunk = new TerrainChunk(validChunkX, validChunkY, this.chunkSize, this.scene);
-
-      // Generate the mesh
-      await chunk.generate();
-
-      // Calculate global position of chunk corner
-      const globalChunkPos = new Vector3(
-        validChunkX * this.chunkSize,
-        0,
-        validChunkY * this.chunkSize
-      );
-
-      // Convert to engine coordinates
-      const enginePos = WorldManager.toEngine(globalChunkPos);
-
-      // Position the chunk
-      chunk.setPosition(enginePos);
-
-      // Add to loaded chunks
-      this.loadedChunks.set(key, chunk);
-
-      // Ensure the mesh is actually in the scene
-      const mesh = chunk.getMesh();
-      if (mesh && !this.scene.meshes.includes(mesh)) {
-        this.scene.addMesh(mesh);
+        criticalChunks.add(`${x}_${y}`);
       }
+    }
 
-      // Wait for the mesh to be fully ready
-      await new Promise((resolve) => setTimeout(resolve, 300));
+    // Get a list of all chunk coordinates
+    const allChunks = Array.from(this.loadedChunks.entries()).map(([key, chunk]) => {
+      const [x, y] = key.split('_').map(Number);
+      const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
+      return { key, chunk, x, y, distance };
+    });
 
-      console.log(`Center chunk loaded at (${validChunkX}, ${validChunkY}) at high resolution`);
-      return chunk;
-    } catch (e) {
-      console.error('Failed to load center chunk:', e);
-      return null;
+    // Sort by distance (farthest first)
+    allChunks.sort((a, b) => b.distance - a.distance);
+
+    // Count how many would be removed
+    const wouldRemove = allChunks.filter(
+      (c) => c.distance > maxDistance && !criticalChunks.has(c.key)
+    );
+
+    if (wouldRemove.length > 0) {
+      console.log(`Unloading ${wouldRemove.length} distant chunks beyond distance ${maxDistance}`);
+    }
+
+    // Unload chunks beyond max distance
+    for (const { key, chunk, x, y, distance } of allChunks) {
+      // Never unload critical chunks
+      if (criticalChunks.has(key)) continue;
+
+      if (distance > maxDistance) {
+        console.log(`Unloading distant chunk (${x}, ${y}), distance: ${distance}`);
+        chunk.dispose();
+        this.loadedChunks.delete(key);
+      }
     }
   }
 
   /**
-   * Load surrounding chunks with optimized async loading strategy
+   * Fallback terrain when chunk loading fails
    */
+  private createEmergencyTerrain(): void {
+    console.warn('Creating emergency terrain at origin');
+
+    const emergencyGround = MeshBuilder.CreateGround(
+      'emergency_terrain',
+      { width: this.chunkSize * 3, height: this.chunkSize * 3 },
+      this.scene
+    );
+
+    const material = new StandardMaterial('emergency_material', this.scene);
+    material.diffuseColor = new Color3(0.8, 0.4, 0.3);
+    emergencyGround.material = material;
+    emergencyGround.checkCollisions = true;
+    emergencyGround.isPickable = true;
+  }
+
+  /**
+   * Clear all loaded chunks and reset state
+   */
+  public async clearAllChunks(): Promise<void> {
+    console.log('Clearing all terrain chunks');
+
+    // Dispose all chunks
+    for (const chunk of this.loadedChunks.values()) {
+      chunk.dispose();
+    }
+
+    // Clear collections
+    this.loadedChunks.clear();
+    this.loadingChunks.clear();
+
+    // Reset tracking
+    this.lastPlayerChunkX = -999;
+    this.lastPlayerChunkY = -999;
+
+    // Allow time for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  // State management methods
+  public lockForTeleport(isLocked: boolean): void {
+    this._isTeleporting = isLocked;
+  }
+
+  public get hasInitialized(): boolean {
+    return this.initialized;
+  }
+
+  public set hasInitialized(value: boolean) {
+    this.initialized = value;
+  }
+
+  public get isTeleporting(): boolean {
+    return this._isTeleporting;
+  }
+
+  public getChunkSize(): number {
+    return this.chunkSize;
+  }
+
+  public loadPriorityChunk(x: number, y: number): Promise<TerrainChunk | null> {
+    return this.loadChunk(x, y, true);
+  }
+
   public loadSurroundingChunksAsync(centerX: number, centerY: number): void {
-    // Create a queue of chunks to load
-    const chunkQueue: Array<{ x: number; y: number; distance: number }> = [];
-
-    // Add surrounding chunks with progressively lower detail
-    for (let ring = 1; ring <= this.renderDistance; ring++) {
-      // Add chunks in this ring
-      for (let dx = -ring; dx <= ring; dx++) {
-        for (let dy = -ring; dy <= ring; dy++) {
-          // Only add chunks that are exactly on this ring (not inside it)
-          if (Math.max(Math.abs(dx), Math.abs(dy)) === ring) {
-            const x = centerX + dx;
-            const y = centerY + dy;
-
-            // Validate chunk coordinates
-            if (x >= 0 && x < 144 && y >= 0 && y < 72) {
-              const key = `${x}_${y}`;
-
-              // Skip if already loaded or loading
-              if (!this.loadedChunks.has(key) && !this.loadingChunks.has(key)) {
-                chunkQueue.push({
-                  x,
-                  y,
-                  distance: Math.max(Math.abs(dx), Math.abs(dy)),
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Sort queue by distance
-    chunkQueue.sort((a, b) => a.distance - b.distance);
-
-    // Process queue with limited concurrency
-    let loading = 0;
-    const maxConcurrent = 3;
-
-    const processNext = () => {
-      if (chunkQueue.length === 0 || loading >= maxConcurrent) return;
-
-      const { x, y } = chunkQueue.shift()!;
-      loading++;
-
-      // Start loading this chunk
-      const key = `${x}_${y}`;
-      this.loadingChunks.add(key);
-
-      const chunk = new TerrainChunk(x, y, this.chunkSize, this.scene);
-
-      chunk
-        .generate()
-        .then(() => {
-          const globalPos = new Vector3(x * this.chunkSize, 0, y * this.chunkSize);
-          const enginePos = WorldManager.toEngine(globalPos);
-          chunk.setPosition(enginePos);
-
-          this.loadedChunks.set(key, chunk);
-
-          // IMPORTANT: Stitch with neighboring chunks
-          this.stitchChunkWithNeighbors(chunk, x, y);
-
-          this.loadingChunks.delete(key);
-          loading--;
-          processNext(); // Process next chunk
-        })
-        .catch((err) => {
-          console.warn(`Failed to load chunk at (${x}, ${y}):`, err);
-          this.loadingChunks.delete(key);
-          loading--;
-          processNext(); // Process next chunk
-        });
-
-      // Try to start another load if possible
-      processNext();
-    };
-
-    // Start processing the queue
-    for (let i = 0; i < maxConcurrent; i++) {
-      processNext();
-    }
+    this.loadSurroundingChunks(centerX, centerY);
   }
 
-  public async waitForInitialChunks(): Promise<void> {
-    // Get player's global position
-    const playerGlobalPos = WorldManager.getGlobalPlayerPosition();
-    console.log(`Generating initial chunks around global position ${playerGlobalPos.toString()}`);
-
-    // Calculate chunk coordinates
-    const playerChunkX = Math.floor(playerGlobalPos.x / this.chunkSize);
-    const playerChunkY = Math.floor(playerGlobalPos.z / this.chunkSize);
-
-    // Clamp to valid ranges (Mars is 144x72 patches)
-    const validChunkX = Math.max(0, Math.min(143, playerChunkX));
-    const validChunkY = Math.max(0, Math.min(71, playerChunkY));
-
-    console.log(`Loading initial chunks around chunk (${validChunkX}, ${validChunkY})`);
-
-    // First clear any existing chunks
-    await this.clearAllChunks();
-
-    // IMPORTANT CHANGE: Load ONLY the center chunk first
-    console.log(`Loading center chunk at (${validChunkX}, ${validChunkY})`);
-    const centerChunk = await this.loadPriorityChunk(validChunkX, validChunkY);
-
-    if (!centerChunk) {
-      console.error('Failed to load center chunk');
-      // Create emergency terrain
-      this.createEmergencyTerrain();
-      return;
-    }
-
-    // Then start loading first ring of surrounding chunks asynchronously
-    this.loadSurroundingChunksAsync(validChunkX, validChunkY);
-
-    // Wait just long enough for raycast to succeed, but don't wait for all chunks
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-
+  // Compatibility methods with old API
   public loadRemoteChunk(data: TerrainChunkDTO): void {
     const key = `${data.x}_${data.y}`;
     if (!this.loadedChunks.has(key)) {
@@ -582,7 +511,7 @@ export default class TerrainManager {
 
   public getActiveChunkCoordinates(): { x: number; y: number }[] {
     const coordinates: { x: number; y: number }[] = [];
-    for (const [key, chunk] of this.loadedChunks.entries()) {
+    for (const [key] of this.loadedChunks.entries()) {
       const [x, y] = key.split('_').map(Number);
       coordinates.push({ x, y });
     }
@@ -594,33 +523,112 @@ export default class TerrainManager {
     const chunk = this.loadedChunks.get(key);
     const mesh = chunk?.getMesh();
 
-    // More thorough check for mesh readiness
     if (!chunk || !mesh) return false;
 
-    // Check if mesh has vertices and is fully ready
-    const isFullyReady =
+    return !!(
       mesh.isReady() &&
       mesh.getTotalVertices() > 0 &&
       mesh.isVisible &&
-      mesh.material?.isReady(mesh);
-
-    return isFullyReady || false;
+      mesh.material?.isReady(mesh)
+    );
   }
 
-  private async loadNextChunks(chunks: { x: number; y: number }[], count: number): Promise<void> {
-    const batch = chunks.slice(0, count);
+  /**
+   * Emergency cleanup when too many chunks are loaded
+   */
+  private emergencyCleanup(playerChunkX: number, playerChunkY: number): void {
+    console.warn('Performing emergency chunk cleanup');
 
-    if (batch.length === 0) return;
+    // Keep only the chunks closest to the player
+    const chunkEntries = Array.from(this.loadedChunks.entries()).map(([key, chunk]) => {
+      const [x, y] = key.split('_').map(Number);
+      const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
+      return { key, chunk, distance };
+    });
 
-    // Load chunks in parallel
-    await Promise.all(batch.map((chunk) => this.loadChunk(chunk.x, chunk.y)));
+    // Sort by distance (closest first)
+    chunkEntries.sort((a, b) => a.distance - b.distance);
 
-    // Schedule next batch with small delay
-    if (chunks.length > count) {
-      setTimeout(() => {
-        this.loadNextChunks(chunks.slice(count), count);
-      }, 100);
+    // Keep only the closest chunks within our limit
+    const maxToKeep = Math.floor(this.maxConcurrentChunks / 2); // Keep half our max as safety
+    const chunksToRemove = chunkEntries.slice(maxToKeep);
+
+    // Dispose the distant chunks
+    for (const { key, chunk } of chunksToRemove) {
+      chunk.dispose();
+      this.loadedChunks.delete(key);
     }
+
+    console.warn(`Emergency cleanup complete: Removed ${chunksToRemove.length} chunks`);
+  }
+
+  /**
+   * Get debug status information
+   */
+  public debugStatus(): {
+    loadedChunks: number;
+    loadingChunks: number;
+    playerChunk: { x: number; y: number };
+    chunks: string[];
+  } {
+    return {
+      loadedChunks: this.loadedChunks.size,
+      loadingChunks: this.loadingChunks.size,
+      playerChunk: { x: this.lastPlayerChunkX, y: this.lastPlayerChunkY },
+      chunks: Array.from(this.loadedChunks.keys()),
+    };
+  }
+
+  /**
+   * Toggle verbose logging
+   */
+  public setDebugVerbose(verbose: boolean): void {
+    this.debugVerbose = verbose;
+    console.log(`TerrainManager verbose logging ${verbose ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Load only the most critical chunks first (current chunk and immediate neighbors)
+   */
+  private loadCriticalChunks(centerX: number, centerY: number): void {
+    console.log(`Loading critical chunks around (${centerX}, ${centerY})`);
+
+    // Load current chunk immediately
+    this.loadChunk(centerX, centerY, true);
+
+    // Load immediate neighbors with high priority but don't await them
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        // Skip center chunk (already loaded)
+        if (dx === 0 && dy === 0) continue;
+
+        const x = centerX + dx;
+        const y = centerY + dy;
+
+        // Skip invalid coordinates
+        if (x < 0 || x >= 144 || y < 0 || y >= 72) continue;
+
+        this.loadChunk(x, y, false);
+      }
+    }
+  }
+
+  /**
+   * Log detailed chunk status for debugging
+   */
+  private logChunkStatus(): void {
+    if (!this.debugVerbose) return;
+
+    const allChunks = Array.from(this.loadedChunks.keys());
+    const loadingChunks = Array.from(this.loadingChunks);
+
+    console.log(`=== TERRAIN STATUS ===
+    Player at chunk: (${this.lastPlayerChunkX}, ${this.lastPlayerChunkY})
+    Loaded chunks: ${this.loadedChunks.size}
+    Loading chunks: ${this.loadingChunks.size}
+    Active chunks: ${allChunks.join(', ')}
+    Loading: ${loadingChunks.join(', ')}
+  `);
   }
 
   public processChunkUpdate(message: { type: string; payload: any }): void {
@@ -631,22 +639,134 @@ export default class TerrainManager {
     }
   }
 
-  public async clearAllChunks(): Promise<void> {
-    console.log('Clearing all terrain chunks');
+  /**
+   * Create a visual representation of world boundaries
+   */
+  public showWorldBoundaries(): void {
+    // Remove any existing boundary visualization
+    const existingBoundaries = this.scene.meshes.filter((m) =>
+      m.name.startsWith('world_boundary_')
+    );
+    existingBoundaries.forEach((m) => m.dispose());
 
-    // Dispose all terrain meshes
-    for (const [_, chunk] of this.loadedChunks.entries()) {
-      chunk.dispose();
+    // Create visible boundary lines
+    const height = 500; // High enough to be visible
+    const color = new Color3(1, 0, 0); // Red
+
+    // Convert world corners to engine coordinates
+    const corners = [
+      WorldManager.toEngine(new Vector3(0, 0, 0)),
+      WorldManager.toEngine(new Vector3(WorldManager.WORLD_WIDTH, 0, 0)),
+      WorldManager.toEngine(new Vector3(WorldManager.WORLD_WIDTH, 0, WorldManager.WORLD_HEIGHT)),
+      WorldManager.toEngine(new Vector3(0, 0, WorldManager.WORLD_HEIGHT)),
+    ];
+
+    // Create vertical lines at each corner
+    corners.forEach((corner, i) => {
+      const line = MeshBuilder.CreateLines(
+        `world_boundary_corner_${i}`,
+        {
+          points: [corner.clone(), new Vector3(corner.x, height, corner.z)],
+        },
+        this.scene
+      );
+      line.color = color;
+    });
+
+    // Create boundary lines connecting corners
+    for (let i = 0; i < corners.length; i++) {
+      const start = corners[i];
+      const end = corners[(i + 1) % corners.length];
+
+      const line = MeshBuilder.CreateLines(
+        `world_boundary_edge_${i}`,
+        {
+          points: [start.clone(), end.clone()],
+        },
+        this.scene
+      );
+      line.color = color;
     }
 
-    // Clear tracking collections
-    this.loadedChunks.clear();
-    this.loadingChunks.clear();
+    console.log('World boundaries visualized');
+  }
 
-    // Reset update timestamp
-    this.lastChunkUpdate = 0;
+  /**
+   * Create physical collision barriers at world boundaries
+   */
+  public createWorldBoundaries(): void {
+    // Remove any existing barriers
+    const existingBarriers = this.scene.meshes.filter((m) =>
+      m.name.startsWith('world_boundary_barrier_')
+    );
+    existingBarriers.forEach((m) => m.dispose());
 
-    // Small delay to allow for cleanup
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Create invisible barriers at world edges (solid collision meshes)
+    const wallHeight = 100;
+    const wallThickness = 10;
+
+    // Convert world boundaries to engine space
+    const southWest = WorldManager.toEngine(new Vector3(0, 0, 0));
+    const northEast = WorldManager.toEngine(
+      new Vector3(WorldManager.WORLD_WIDTH, 0, WorldManager.WORLD_HEIGHT)
+    );
+
+    // Create south wall (min Z)
+    const southWall = MeshBuilder.CreateBox(
+      'world_boundary_barrier_south',
+      { width: northEast.x - southWest.x + 200, height: wallHeight, depth: wallThickness },
+      this.scene
+    );
+    southWall.position = new Vector3(
+      (southWest.x + northEast.x) / 2,
+      wallHeight / 2,
+      southWest.z - wallThickness / 2
+    );
+    southWall.isVisible = false;
+    southWall.checkCollisions = true;
+
+    // Create north wall (max Z)
+    const northWall = MeshBuilder.CreateBox(
+      'world_boundary_barrier_north',
+      { width: northEast.x - southWest.x + 200, height: wallHeight, depth: wallThickness },
+      this.scene
+    );
+    northWall.position = new Vector3(
+      (southWest.x + northEast.x) / 2,
+      wallHeight / 2,
+      northEast.z + wallThickness / 2
+    );
+    northWall.isVisible = false;
+    northWall.checkCollisions = true;
+
+    // Create west wall (min X)
+    const westWall = MeshBuilder.CreateBox(
+      'world_boundary_barrier_west',
+      { width: wallThickness, height: wallHeight, depth: northEast.z - southWest.z + 200 },
+      this.scene
+    );
+    westWall.position = new Vector3(
+      southWest.x - wallThickness / 2,
+      wallHeight / 2,
+      (southWest.z + northEast.z) / 2
+    );
+    westWall.isVisible = false;
+    westWall.checkCollisions = true;
+
+    // Create east wall (max X)
+    const eastWall = MeshBuilder.CreateBox(
+      'world_boundary_barrier_east',
+      { width: wallThickness, height: wallHeight, depth: northEast.z - southWest.z + 200 },
+      this.scene
+    );
+    eastWall.position = new Vector3(
+      northEast.x + wallThickness / 2,
+      wallHeight / 2,
+      (southWest.z + northEast.z) / 2
+    );
+    eastWall.isVisible = false;
+    eastWall.checkCollisions = true;
+
+    console.log('World boundary barriers created');
   }
 }

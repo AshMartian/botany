@@ -1,5 +1,4 @@
 import { Color3, Engine, Vector3, Scene as BabylonScene } from '@babylonjs/core';
-import { safetyPatchCollisionSystem, validateTerrainCollisions } from '@/models/player/MoveHelper';
 import PlayerSpawner from '@/models/player/PlayerSpawner';
 import SharedPlayerState from '@/models/player/SharedPlayerState';
 import WorldManager from '@/models/terrain/WorldManager';
@@ -32,6 +31,10 @@ export default class Game {
   private positionSaveInterval?: number;
   private playerSpawner!: PlayerSpawner;
   private debugMode = false;
+  private debugVerboseLogging = false;
+  private lastEngineDistanceCheckTime = 0;
+  private terrainStabilityCheckTime = 0;
+  private readonly TERRAIN_CHECK_INTERVAL = 5000; // Check every 5 seconds
   init() {
     // Apply safety patch to collision system
     // safetyPatchCollisionSystem();
@@ -52,6 +55,9 @@ export default class Game {
 
     // Create player spawner
     this.playerSpawner = new PlayerSpawner(this.scene, this.debugMode);
+
+    // Setup debug keys for emergency recovery
+    this.setupDebugKeys();
 
     // Make game instance available globally with teleport method
     window.game = {
@@ -95,7 +101,7 @@ export default class Game {
     globalThis.collisions = new Collisions();
 
     // Initialize terrain system first
-    window.terrainManager = new TerrainManager(window.scene!, 128, 3); // Use 128 chunk size (power of 2)
+    window.terrainManager = new TerrainManager(window.scene!, 128, 2); // Use 128 chunk size with render distance 2
 
     console.log(
       'Using position for spawn:',
@@ -167,51 +173,15 @@ export default class Game {
       clearInterval(this.positionSaveInterval);
     }
 
-    // Save position and update terrain every 5 seconds
+    // Save position every 5 seconds
     this.positionSaveInterval = window.setInterval(() => {
       const playerId = store.getPlayerId();
       const playerMesh = globalThis.scene.getMeshByName('playerFoot_' + playerId);
 
       if (playerMesh) {
-        // IMPORTANT CHANGE: Only reset position if player has moved significantly
-        // This prevents the forced reset issue
-        // const distanceFromOrigin = playerMesh.position.length();
-
-        // if (distanceFromOrigin > 500) {
-        //   // Only reset if really far from origin
-        //   // Update the global position based on engine position changes
-        //   const updatedGlobalPos = WorldManager.toGlobal(playerMesh.position);
-        //   WorldManager.setGlobalPlayerPosition(updatedGlobalPos);
-
-        //   // Reset player to origin while maintaining Y height
-        //   const playerHeight = playerMesh.position.y;
-        //   playerMesh.position = new Vector3(0, playerHeight, 0);
-
-        //   console.log(
-        //     'Player position reset to origin, global position updated to:',
-        //     updatedGlobalPos.toString()
-        //   );
-
-        //   // After resetting position, wait before updating terrain
-        //   setTimeout(() => {
-        //     if (window.terrainManager) {
-        //       window.terrainManager.updateChunks(Vector3.Zero());
-        //     }
-        //   }, 500);
-        // } else {
-        //   // Only update terrain if not teleporting
-        if (window.terrainManager && !window.terrainManager.isTeleporting) {
-          // Update terrain chunks based on player position
-          window.terrainManager.updateChunks(playerMesh.position);
-        }
-        // }
-
-        // Save the position regardless
-        const virtualPos = WorldManager.toVirtual(playerMesh.position);
+        // Save the virtual position only
+        const virtualPos = WorldManager.toGlobal(playerMesh.position);
         this.playerSpawner.updateGlobalMapPosition(virtualPos);
-
-        // Periodically validate terrain collisions
-        validateTerrainCollisions(this.scene);
       }
     }, 5000);
   }
@@ -236,6 +206,23 @@ export default class Game {
           playerMesh.position.y = isFinite(playerMesh.position.y) ? playerMesh.position.y : 50;
           playerMesh.position.z = isFinite(playerMesh.position.z) ? playerMesh.position.z : 0;
         }
+
+        // ⭐ NEW: Validate engine distance from origin every 5 seconds
+        if (
+          this.lastEngineDistanceCheckTime === 0 ||
+          performance.now() - this.lastEngineDistanceCheckTime > 5000
+        ) {
+          if (window.terrainManager && !window.terrainManager.isTeleporting) {
+            window.terrainManager.updateChunks(playerMesh.position);
+          }
+          // this.playerSpawner.validatePlayerPosition(playerMesh);
+          this.lastEngineDistanceCheckTime = performance.now();
+        }
+
+        // Add stability check
+        // this.checkTerrainStability();
+
+        // UPDATE TERRAIN EVERY FRAME if terrain manager exists
       }
 
       // Also check camera
@@ -262,5 +249,65 @@ export default class Game {
       clearInterval(this.positionSaveInterval);
       this.positionSaveInterval = undefined;
     }
+  }
+
+  /**
+   * Setup debug keyboard shortcuts for emergency recovery
+   */
+  private setupDebugKeys(): void {
+    window.addEventListener('keydown', (e) => {
+      // Only in development
+      if (process.env.NODE_ENV !== 'production') {
+        // Alt+R: Reset terrain system (emergency recovery)
+        if (e.key === 'r' && e.altKey) {
+          console.warn('🚨 EMERGENCY TERRAIN RESET 🚨');
+          if (window.terrainManager) {
+            window.terrainManager.clearAllChunks();
+
+            // Get current player position
+            const playerId = store.getPlayerId();
+            const playerMesh = this.scene.getMeshByName('playerFoot_' + playerId);
+
+            if (playerMesh) {
+              const globalPos = WorldManager.toVirtual(playerMesh.position);
+              setTimeout(() => {
+                window.terrainManager?.initialize(globalPos);
+              }, 500);
+            }
+          }
+        }
+
+        // Alt+D: Toggle debug information
+        if (e.key === 'd' && e.altKey) {
+          if (window.terrainManager) {
+            const status = window.terrainManager.debugStatus();
+            console.log('🔍 TERRAIN DEBUG:', status);
+          }
+        }
+
+        // Alt+L: Toggle verbose logging
+        if (e.key === 'l' && e.altKey) {
+          if (window.terrainManager) {
+            this.debugVerboseLogging = !this.debugVerboseLogging;
+            window.terrainManager.setDebugVerbose(this.debugVerboseLogging);
+          }
+        }
+
+        // Alt+B: Show world boundaries
+        if (e.key === 'b' && e.altKey) {
+          console.log('Showing world boundaries');
+          if (window.terrainManager) {
+            // Create physical boundary barriers
+            if (typeof window.terrainManager.createWorldBoundaries === 'function') {
+              window.terrainManager.createWorldBoundaries();
+            }
+            // Show visual boundary lines
+            if (typeof window.terrainManager.showWorldBoundaries === 'function') {
+              window.terrainManager.showWorldBoundaries();
+            }
+          }
+        }
+      }
+    });
   }
 }

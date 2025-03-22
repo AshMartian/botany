@@ -81,38 +81,3 @@ export function safetyPatchCollisionSystem(): void {
 
   console.log('Collision system safely patched');
 }
-
-/**
- * Validates terrain meshes to ensure they have valid collision data
- * @param scene The BabylonJS scene to check
- */
-export function validateTerrainCollisions(scene: Scene): void {
-  if (!scene || !scene.meshes) return;
-
-  const terrainMeshes = scene.meshes.filter((mesh: AbstractMesh) =>
-    mesh.name.startsWith('terrain_chunk_')
-  );
-
-  let fixedCount = 0;
-
-  terrainMeshes.forEach((mesh: AbstractMesh) => {
-    // Check if mesh has valid collision data with proper null checking
-    const positions = mesh.getVerticesData ? mesh.getVerticesData('position') : null;
-    const indices = mesh.getIndices ? mesh.getIndices() : null;
-
-    const hasValidVertices = positions && positions.length > 0;
-    const hasValidIndices = indices && indices.length > 0;
-
-    if (!hasValidVertices || !hasValidIndices) {
-      // Disable collisions on invalid meshes
-      if (mesh.checkCollisions) {
-        mesh.checkCollisions = false;
-        fixedCount++;
-      }
-    }
-  });
-
-  if (fixedCount > 0) {
-    console.log(`Disabled collisions on ${fixedCount} invalid terrain meshes`);
-  }
-}

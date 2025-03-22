@@ -1,6 +1,7 @@
 import { Vector3, Scene as BabylonScene } from '@babylonjs/core';
 import SharedPlayerState from '@/models/player/SharedPlayerState';
 import WorldManager from './WorldManager';
+import store from '@/store/store';
 import { AdvancedDynamicTexture, Image, Control, Rectangle, TextBlock, Grid } from '@babylonjs/gui';
 
 export default class MiniMap {
@@ -12,6 +13,8 @@ export default class MiniMap {
   private mapSize: number;
   private lastChunkX = -1;
   private lastChunkZ = -1;
+  private lastUpdateTime = 0;
+  private debugText: TextBlock | null = null;
 
   constructor(scene: BabylonScene) {
     this.scene = scene;
@@ -103,6 +106,21 @@ export default class MiniMap {
 
     if (!virtualPos) return;
 
+    // Validate position is accurate when in debug mode
+    if (window.terrainManager?.debugMode) {
+      const playerMesh = this.scene.getMeshByName('playerFoot_' + (store.getPlayerId() || ''));
+      if (playerMesh) {
+        const globalPosFromMesh = WorldManager.toGlobal(playerMesh.position);
+        const diff = Vector3.Distance(globalPosFromMesh, virtualPos);
+
+        if (diff > 5) {
+          console.warn(`MiniMap position differs from actual position by ${diff.toFixed(2)} units:
+            MiniMap: ${virtualPos.toString()}
+            Actual: ${globalPosFromMesh.toString()}`);
+        }
+      }
+    }
+
     // Calculate which chunk the player is in
     const chunkSize = 128;
     const chunkX = Math.floor(virtualPos.x / chunkSize);
@@ -121,8 +139,35 @@ export default class MiniMap {
     this.playerMarker.left = mapX - this.mapSize / 2 + 'px';
     this.playerMarker.top = mapZ - this.mapSize / 2 + 'px';
 
-    // Update map tiles when player moves to a new chunk
-    if (chunkX !== this.lastChunkX || chunkZ !== this.lastChunkZ) {
+    // Add debug info to minimap
+    if (window.terrainManager?.debugMode) {
+      // Create or update debug text
+      if (!this.debugText) {
+        this.debugText = new TextBlock();
+        this.debugText.color = 'white';
+        this.debugText.fontSize = 10;
+        this.debugText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+        this.debugText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+        this.debugText.top = '5px';
+        this.debugText.left = '5px';
+        this.mapContainer.addControl(this.debugText);
+      }
+
+      // Update text with position info
+      this.debugText.text = `Pos: ${Math.floor(virtualPos.x)},${Math.floor(
+        virtualPos.z
+      )}\nChunk: ${chunkX},${chunkZ}`;
+    }
+
+    // Update map tiles when player moves to a new chunk, but with rate limiting
+    const now = performance.now();
+    if (
+      (chunkX !== this.lastChunkX || chunkZ !== this.lastChunkZ) &&
+      now - this.lastUpdateTime > 1000
+    ) {
+      // Limit updates to once per second
+      this.lastUpdateTime = now;
+
       this.updateMapTiles(chunkX, chunkZ);
       this.lastChunkX = chunkX;
       this.lastChunkZ = chunkZ;
@@ -132,10 +177,11 @@ export default class MiniMap {
   private updateMapTiles(centerChunkX: number, centerChunkZ: number): void {
     console.log(`MiniMap: Updating tiles around chunk (${centerChunkX}, ${centerChunkZ})`);
 
-    // FIXED: Ensure chunk coordinates are within valid range
+    // FIXED: Ensure chunk coordinates are within valid range with a safety margin
     // Mars is 144 patches wide (X) and 72 patches tall (Z)
-    centerChunkX = Math.max(0, Math.min(143, centerChunkX));
-    centerChunkZ = Math.max(0, Math.min(71, centerChunkZ));
+    // Use a 1-chunk safety margin to avoid edge cases
+    centerChunkX = Math.max(1, Math.min(142, centerChunkX));
+    centerChunkZ = Math.max(1, Math.min(70, centerChunkZ));
 
     // Clear grid
     this.mapGrid.children.slice().forEach((child) => {

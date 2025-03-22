@@ -11,7 +11,6 @@ import SharedPlayerState from '@/models/player/SharedPlayerState';
 import WorldManager from '@/models/terrain/WorldManager';
 import store from '@/store/store';
 import storeVuex from '@/store/vuex';
-import { validateTerrainCollisions } from '@/models/player/MoveHelper';
 
 /**
  * Handles player spawning and teleportation functionality
@@ -39,9 +38,6 @@ export default class PlayerSpawner {
 
     // Use the unified positioning method with isInitialSpawn=true
     await this.positionPlayerOnTerrain(playerMesh, spawnGlobalPosition, true);
-
-    // Validate terrain collisions to prevent crashes
-    validateTerrainCollisions(this.scene);
 
     // Enable physics/controls after spawning
     if (window.playerController?.enableControls) {
@@ -106,9 +102,9 @@ export default class PlayerSpawner {
 
       // Validate global position within world bounds
       const validGlobalPos = new Vector3(
-        Math.max(0, Math.min(WorldManager.WORLD_WIDTH, globalPos.x)),
+        Math.max(0, Math.min(WorldManager.WORLD_HEIGHT, globalPos.x)),
         globalPos.y,
-        Math.max(0, Math.min(WorldManager.WORLD_HEIGHT, globalPos.z))
+        Math.max(0, Math.min(WorldManager.WORLD_WIDTH, globalPos.z))
       );
 
       // Use the unified positioning method
@@ -163,8 +159,8 @@ export default class PlayerSpawner {
         await window.terrainManager.clearAllChunks();
 
         // STEP 4: Calculate chunk coordinates
-        const chunkX = Math.floor(globalPos.x / window.terrainManager.chunkSize);
-        const chunkY = Math.floor(globalPos.z / window.terrainManager.chunkSize);
+        const chunkX = Math.floor(globalPos.x / window.terrainManager.getChunkSize());
+        const chunkY = Math.floor(globalPos.z / window.terrainManager.getChunkSize());
 
         // STEP 5: Load center chunk at highest resolution
         console.log('Loading center chunk at highest resolution');
@@ -201,7 +197,7 @@ export default class PlayerSpawner {
               setTimeout(() => {
                 if (window.terrainManager) {
                   window.terrainManager.lockForTeleport(false);
-                  window.terrainManager._hasInitialized = true;
+                  window.terrainManager.hasInitialized = true;
                 }
               }, 1000);
             }
@@ -277,8 +273,8 @@ export default class PlayerSpawner {
         }
 
         // Convert normalized coordinates to virtual world coordinates
-        const virtualX = x * WorldManager.WORLD_WIDTH;
-        const virtualZ = z * WorldManager.WORLD_HEIGHT;
+        const virtualX = x * WorldManager.WORLD_HEIGHT;
+        const virtualZ = z * WorldManager.WORLD_WIDTH;
 
         console.log(
           'Loaded saved position:',
@@ -299,8 +295,8 @@ export default class PlayerSpawner {
    */
   public updateGlobalMapPosition(globalPos: Vector3): void {
     // Convert global position to normalized globe coordinates (0-1 range)
-    const normalizedX = globalPos.x / WorldManager.WORLD_WIDTH;
-    const normalizedZ = globalPos.z / WorldManager.WORLD_HEIGHT;
+    const normalizedX = globalPos.x / WorldManager.WORLD_HEIGHT;
+    const normalizedZ = globalPos.z / WorldManager.WORLD_WIDTH;
 
     // Ensure values are within 0-1 range
     const clampedX = Math.max(0, Math.min(1, normalizedX));
@@ -325,8 +321,8 @@ export default class PlayerSpawner {
    * Save player position to localStorage
    */
   private savePlayerPosition(globalPos: Vector3): void {
-    const normalizedX = globalPos.x / WorldManager.WORLD_WIDTH;
-    const normalizedZ = globalPos.z / WorldManager.WORLD_HEIGHT;
+    const normalizedX = globalPos.x / WorldManager.WORLD_HEIGHT;
+    const normalizedZ = globalPos.z / WorldManager.WORLD_WIDTH;
 
     // Ensure values are within 0-1 range
     const clampedX = Math.max(0, Math.min(1, normalizedX));
@@ -342,5 +338,49 @@ export default class PlayerSpawner {
         timestamp: Date.now(),
       })
     );
+  }
+
+  /**
+   * Check if player has terrain underneath and adjust height if needed
+   */
+  public checkTerrainUnderPlayer(playerMesh: AbstractMesh): void {
+    if (!playerMesh) return;
+
+    // Raycast downward to check for terrain
+    const rayStart = playerMesh.position.clone();
+    rayStart.y += 10; // Start above the player
+
+    const ray = new Ray(rayStart, Vector3.Down(), 1000);
+    const hits = this.scene.multiPickWithRay(ray);
+
+    if (hits && hits.length > 0) {
+      // Find the first terrain hit
+      const terrainHit = hits.find(
+        (hit) => hit.pickedMesh && hit.pickedMesh.name.includes('terrain_chunk')
+      );
+
+      if (terrainHit && terrainHit.pickedPoint) {
+        const distanceToGround = rayStart.y - terrainHit.pickedPoint.y;
+
+        // If player is too far above ground or below it, adjust position
+        if (distanceToGround > 50 || distanceToGround < 0) {
+          console.warn('Player height adjustment needed:', distanceToGround);
+          // Place player 2 units above ground
+          playerMesh.position.y = terrainHit.pickedPoint.y + 2;
+        }
+      } else {
+        // No terrain found under player - emergency terrain needed
+        console.warn('No terrain found under player!');
+
+        // Try to force load current chunk
+        const globalPos = WorldManager.toGlobal(playerMesh.position);
+        const chunkX = Math.floor(globalPos.x / 128);
+        const chunkY = Math.floor(globalPos.z / 128);
+
+        if (window.terrainManager) {
+          window.terrainManager.loadPriorityChunk(chunkX, chunkY);
+        }
+      }
+    }
   }
 }

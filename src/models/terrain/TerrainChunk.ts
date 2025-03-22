@@ -76,12 +76,6 @@ export default class TerrainChunk {
 
       // Force compute world matrix
       this.mesh.computeWorldMatrix(true);
-
-      console.log(`Generated terrain chunk ${this.x},${this.y}:
-        - Vertices: ${this.mesh.getTotalVertices()}
-        - Visible: ${this.mesh.isVisible}
-        - Material: ${this.mesh.material ? 'Applied' : 'Missing'}
-        - Position: ${this.mesh.position.toString()}`);
     } else {
       console.error(`Failed to create mesh for chunk ${this.x},${this.y}`);
     }
@@ -98,7 +92,6 @@ export default class TerrainChunk {
       // In our system, this.x is horizontal (0-143) and this.y is vertical (0-71)
       // So patch_Z_X.raw maps to patch_Y_X.raw in our system
       const url = `https://ashmartian.com/mars/patch_${this.y}_${this.x}.raw`;
-      console.log(`Fetching heightmap from: ${url}`);
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -129,8 +122,6 @@ export default class TerrainChunk {
 
     // Create output array for the parsed heights
     const data = new Float32Array(size * size);
-
-    console.log(`Parsing heightmap data for chunk (${this.x}, ${this.y}), size: ${size}x${size}`);
 
     // CRITICAL FIX: Parse data following the exact C# implementation
     // The key issue is ensuring our coordinate system matches the heightmap orientation
@@ -163,11 +154,6 @@ export default class TerrainChunk {
       min = Math.min(min, data[i]);
       max = Math.max(max, data[i]);
     }
-    console.log(
-      `Heightmap data range for chunk (${this.x}, ${this.y}): ${min.toFixed(4)} to ${max.toFixed(
-        4
-      )}`
-    );
 
     return data;
   }
@@ -251,10 +237,6 @@ export default class TerrainChunk {
       vertexData.uvs = uvs;
       vertexData.applyToMesh(this.mesh);
 
-      console.log(
-        `Created terrain chunk ${this.x},${this.y} with ${this.mesh.getTotalVertices()} vertices`
-      );
-
       // Add physics and visibility properties
       this.mesh.checkCollisions = true;
       this.mesh.isPickable = true;
@@ -285,13 +267,6 @@ export default class TerrainChunk {
       // Ensure bounding info is properly computed
       this.mesh.computeWorldMatrix(true);
       this.mesh.refreshBoundingInfo();
-
-      // Log successful mesh creation with details
-      console.log(`Terrain chunk ${this.x},${this.y} created successfully:
-        - Vertices: ${this.mesh.getTotalVertices()}
-        - Position: ${this.mesh.position.toString()}
-        - Visibility: ${this.mesh.isVisible}
-        - Material: ${this.mesh.material ? 'Applied' : 'Missing'}`);
     } catch (error) {
       console.error(`Error creating terrain chunk mesh at ${this.x},${this.y}:`, error);
     }
@@ -299,11 +274,6 @@ export default class TerrainChunk {
 
   private createProceduralMesh(): void {
     if (!this.mesh) return;
-
-    console.log(
-      `Creating procedural mesh for chunk ${this.x},${this.y} due to missing heightmap data`
-    );
-
     // Calculate chunk position in virtual space
     const virtualPosition = new Vector3(this.x * this.size, 0, this.y * this.size);
 
@@ -372,12 +342,6 @@ export default class TerrainChunk {
     if (this.mesh.getTotalVertices() === 0) {
       console.error(
         `Failed to create procedural mesh for chunk ${this.x},${this.y} - still has 0 vertices`
-      );
-    } else {
-      console.log(
-        `Successfully created procedural mesh for chunk ${this.x},${
-          this.y
-        } with ${this.mesh.getTotalVertices()} vertices`
       );
     }
 
@@ -658,13 +622,8 @@ export default class TerrainChunk {
     direction: 'left' | 'right' | 'top' | 'bottom'
   ): void {
     if (!this.mesh || !neighbor.mesh) {
-      console.log(
-        `Stitching failed: Missing mesh for either chunk ${this.x},${this.y} or neighbor`
-      );
       return;
     }
-
-    console.log(`Stitching chunk ${this.x},${this.y} with neighbor in direction ${direction}`);
   }
 
   public dispose(): void {

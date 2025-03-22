@@ -4,6 +4,7 @@ export default class WorldManager {
   // Mars dimensions from documentation: 144 patches wide (X), 72 patches tall (Z)
   static readonly WORLD_WIDTH = 144 * 128; // Total world width in units (144 patches * 128 units/patch)
   static readonly WORLD_HEIGHT = 72 * 128; // Total world height in units (72 patches * 128 units/patch)
+  static readonly chunkSize = 128; // Size of a terrain chunk
 
   // Debug flag to help with coordinate system issues
   static readonly DEBUG_COORDINATES = true;
@@ -19,8 +20,14 @@ export default class WorldManager {
    * Set the player's global position on Mars
    */
   static setGlobalPlayerPosition(position: Vector3): void {
+    // Validate position - catch NaN or Infinity
+    if (!position || !isFinite(position.x) || !isFinite(position.y) || !isFinite(position.z)) {
+      console.error('Invalid global position:', position?.toString());
+      return; // Don't update with invalid values
+    }
+
     this.globalPlayerPosition = position.clone();
-    // console.log('Updated player global position:', position.toString());
+    // console.log('Updated player global position:', clampedPosition.toString());
   }
 
   /**
@@ -45,11 +52,14 @@ export default class WorldManager {
       return this.globalPlayerPosition.clone();
     }
 
-    return new Vector3(
+    // Calculate raw global position
+    const globalPosition = new Vector3(
       this.globalPlayerPosition.x + enginePosition.x,
       enginePosition.y,
       this.globalPlayerPosition.z + enginePosition.z
     );
+
+    return globalPosition;
   }
 
   /**
@@ -67,20 +77,23 @@ export default class WorldManager {
       return Vector3.Zero();
     }
 
-    return new Vector3(
+    // Create a fresh copy to avoid modifying the input
+    const enginePosition = new Vector3(
       globalPosition.x - this.globalPlayerPosition.x,
       globalPosition.y,
       globalPosition.z - this.globalPlayerPosition.z
     );
+
+    return enginePosition;
   }
 
   /**
    * Get chunk coordinates from a global position
    */
-  static getChunkCoordinates(globalPosition: Vector3, chunkSize: number): { x: number; y: number } {
+  static getChunkCoordinates(globalPosition: Vector3): { x: number; y: number } {
     return {
-      x: Math.floor(globalPosition.x / chunkSize),
-      y: Math.floor(globalPosition.z / chunkSize),
+      x: Math.floor(globalPosition.x / this.chunkSize),
+      y: Math.floor(globalPosition.z / this.chunkSize),
     };
   }
 
