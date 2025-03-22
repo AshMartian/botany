@@ -175,7 +175,7 @@ export default class MiniMap {
   }
 
   private updateMapTiles(centerChunkX: number, centerChunkZ: number): void {
-    console.log(`MiniMap: Updating tiles around chunk (${centerChunkX}, ${centerChunkZ})`);
+    // console.log(`MiniMap: Updating tiles around chunk (${centerChunkX}, ${centerChunkZ})`);
 
     // FIXED: Ensure chunk coordinates are within valid range with a safety margin
     // Mars is 144 patches wide (X) and 72 patches tall (Z)

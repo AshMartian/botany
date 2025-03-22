@@ -23,6 +23,9 @@ import Prefabs from '@/models/scene/Prefabs';
 import TerrainManager from '@/models/terrain/TerrainManager';
 import MiniMap from '@/models/terrain/MiniMap';
 import GlobalMap from '@/models/terrain/GlobalMap';
+// Import our new services
+import crosshairService from '@/services/CrosshairService';
+import regolithCollector from '@/services/RegolithCollector';
 
 export default class Game {
   private scene!: BabylonScene;
@@ -86,19 +89,22 @@ export default class Game {
       });
 
       // Add position sanitizer and terrain validation
-      this.setupPositionSanitizer();
       this.startPositionPersistence();
     });
   }
 
   async initializeGameComponents(spawnPosition: Vector3, callback: any) {
-    RegisterTagsExtension();
+    if (!window.scene) {
+      console.error('Scene not initialized');
+      return;
+    }
 
+    RegisterTagsExtension();
     new DevMode();
     globalThis.collisions = new Collisions();
 
     // Initialize terrain system first
-    window.terrainManager = new TerrainManager(window.scene!, 128, 4);
+    window.terrainManager = new TerrainManager(window.scene, 128, 4);
 
     console.log(
       'Using position for spawn:',
@@ -107,49 +113,65 @@ export default class Game {
     );
 
     try {
-      // Re-enable terrain manager initialization
+      // Initialize terrain system first
       await window.terrainManager.initialize(spawnPosition);
 
       // Now initialize player after terrain is ready
-      PlayerSelf.init(async () => {
-        // Use the player spawner to spawn the player
-        await this.playerSpawner.spawnPlayer(spawnPosition);
+      await new Promise<void>((resolve) => {
+        PlayerSelf.init(async () => {
+          // Use the player spawner to spawn the player
+          await this.playerSpawner.spawnPlayer(spawnPosition);
 
-        // Set up player shadows after player is fully loaded
-        if (globalThis.environment) {
-          globalThis.environment.setupPlayerShadows();
-        }
+          // Set up player shadows after player is fully loaded
+          if (globalThis.environment) {
+            globalThis.environment.setupPlayerShadows();
+          }
 
-        callback();
+          // Wait a frame to ensure all meshes are properly initialized
+          this.scene.executeWhenReady(async () => {
+            // Initialize our crosshair system after player is loaded
+            console.log('Initializing crosshair and regolith collection systems');
+            try {
+              await crosshairService.init();
+              crosshairService.registerInteractionHandler(regolithCollector);
+              console.log('Successfully initialized crosshair service');
+            } catch (error) {
+              console.error('Failed to initialize crosshair service:', error);
+            }
 
-        Materials.addCustomMaterial();
-        BlendModes.init();
-        OutLiner.init();
-        new Doors();
-
-        new Points(store.getPlayerId() || '');
-
-        storeVuex.commit('LOADING_TOGGLE');
+            callback();
+            Materials.addCustomMaterial();
+            BlendModes.init();
+            OutLiner.init();
+            new Doors();
+            new Points(store.getPlayerId() || '');
+            storeVuex.commit('LOADING_TOGGLE');
+            resolve();
+          });
+        });
       });
     } catch (error) {
       console.error('Failed to load initial terrain:', error);
-      // Fallback initialization
-      PlayerSelf.init(() => {
-        callback();
-        Materials.addCustomMaterial();
-        BlendModes.init();
-        OutLiner.init();
-        new Doors();
-
-        new Points(store.getPlayerId() || '');
-
-        storeVuex.commit('LOADING_TOGGLE');
+      // Fallback initialization without terrain
+      await new Promise<void>((resolve) => {
+        PlayerSelf.init(async () => {
+          callback();
+          Materials.addCustomMaterial();
+          BlendModes.init();
+          OutLiner.init();
+          new Doors();
+          new Points(store.getPlayerId() || '');
+          storeVuex.commit('LOADING_TOGGLE');
+          resolve();
+        });
       });
     }
 
-    // Initialize mini map and global map
-    window.miniMap = new MiniMap(window.scene!);
-    window.globalMap = new GlobalMap(window.scene!);
+    // Initialize mini map and global map after everything else
+    if (window.scene) {
+      window.miniMap = new MiniMap(window.scene);
+      window.globalMap = new GlobalMap(window.scene);
+    }
 
     new Prefabs(() => {
       //Optimize.setMeshes(globalThis.scene.meshes)
@@ -185,64 +207,6 @@ export default class Game {
         this.playerSpawner.updateGlobalMapPosition(virtualPos);
       }
     }, 5000);
-  }
-
-  private setupPositionSanitizer(): void {
-    // Check for non-finite positions in all critical components
-    this.scene.onBeforeRenderObservable.add(() => {
-      // Check player position
-      const playerId = store.getPlayerId();
-      const playerMesh = this.scene.getMeshByName('playerFoot_' + playerId);
-
-      if (playerMesh) {
-        // Fix any non-finite values
-        if (
-          !isFinite(playerMesh.position.x) ||
-          !isFinite(playerMesh.position.y) ||
-          !isFinite(playerMesh.position.z)
-        ) {
-          console.warn('Fixed non-finite player position');
-
-          playerMesh.position.x = isFinite(playerMesh.position.x) ? playerMesh.position.x : 0;
-          playerMesh.position.y = isFinite(playerMesh.position.y) ? playerMesh.position.y : 50;
-          playerMesh.position.z = isFinite(playerMesh.position.z) ? playerMesh.position.z : 0;
-        }
-
-        // ⭐ NEW: Validate engine distance from origin every 5 seconds
-        if (
-          this.lastEngineDistanceCheckTime === 0 ||
-          performance.now() - this.lastEngineDistanceCheckTime > 5000
-        ) {
-          if (window.terrainManager && !window.terrainManager.isTeleporting) {
-            window.terrainManager.updateChunks(playerMesh.position);
-          }
-          // this.playerSpawner.validatePlayerPosition(playerMesh);
-          this.lastEngineDistanceCheckTime = performance.now();
-        }
-
-        // Add stability check
-        // this.checkTerrainStability();
-
-        // UPDATE TERRAIN EVERY FRAME if terrain manager exists
-      }
-
-      // Also check camera
-      if (this.scene.activeCamera) {
-        const camera = this.scene.activeCamera;
-        if (
-          !isFinite(camera.position.x) ||
-          !isFinite(camera.position.y) ||
-          !isFinite(camera.position.z)
-        ) {
-          console.warn('Fixed non-finite camera position');
-          camera.position = new Vector3(
-            isFinite(camera.position.x) ? camera.position.x : 0,
-            isFinite(camera.position.y) ? camera.position.y : 50,
-            isFinite(camera.position.z) ? camera.position.z : 0
-          );
-        }
-      }
-    });
   }
 
   public cleanup(): void {

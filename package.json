@@ -9,7 +9,7 @@
   "scripts": {
     "build": "vue-cli-service build --dest ../lola-build/dist",
     "serve": "vue-cli-service serve",
-    "lint": "prettier --write --log-level silent . && vue-cli-service lint",
+    "lint": "prettier --write --log-level=silent . && vue-cli-service lint",
     "validate": "tsc --noEmit && prettier --write . && npm run lint"
   },
   "dependencies": {
@@ -27,6 +27,7 @@
     "copy-text-to-clipboard": "^3.2.0",
     "core-js": "^3.29.1",
     "dotenv": "^16.0.3",
+    "idb": "^8.0.2",
     "mobile-detect": "^1.4.5",
     "nipplejs": "^0.10.1",
     "rand-token": "^1.0.1",

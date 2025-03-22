@@ -1,5 +1,5 @@
 <template>
-  <div id="menu" class="modal no_focus_game" v-show="this.$store.state.level.isMenuOpen">
+  <div id="menu" class="modal no_focus_game" v-show="this?.$store?.state.level.isMenuOpen">
     <div class="container">
       <div class="content">
         <div class="title margin_bottom">Menu</div>

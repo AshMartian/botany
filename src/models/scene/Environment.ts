@@ -119,21 +119,6 @@ export default class Environment {
     shadowGenerator.depthScale = 50; // IMPORTANT FIX: Reduced for better shadow precision
     shadowGenerator.transparencyShadow = true;
 
-    // IMPORTANT: Add debug callback to ensure light direction stays consistent
-    this.scene.onBeforeRenderObservable.add(() => {
-      if (shadowGenerator && light) {
-        // Force light direction to stay consistent
-        light.direction = new Vector3(-1, -2, -1).normalize();
-
-        // Log shadow information occasionally for debugging
-        if (Math.random() < 0.001) {
-          // Log approx once every 1000 frames
-          console.log('Shadow map active:', shadowGenerator.getShadowMap() != null);
-          console.log('Shadow casters:', shadowGenerator.getShadowMap()?.renderList?.length || 0);
-        }
-      }
-    });
-
     // Register all terrain chunks as shadow receivers
     console.log('Registering terrain chunks for shadows...');
     let terrainCount = 0;
@@ -144,27 +129,13 @@ export default class Environment {
         terrainCount++;
       }
     });
-    console.log(`Added ${terrainCount} terrain chunks to shadow system`);
+    // console.log(`Added ${terrainCount} terrain chunks to shadow system`);
 
     // Store shadow generator for later access
     this.shadowGenerator = shadowGenerator;
     globalThis.shadowGenerator = shadowGenerator;
     globalThis.environment = this;
     globalThis.terrainMaterials = {};
-
-    // Add useful debugging methods
-    globalThis.visualizeShadowMap = () => this.visualizeShadowMap();
-    globalThis.toggleShadowMap = () => {
-      // Toggle shadow map visualization
-      const existing = this.scene.getMeshByName('shadowVisualizer');
-      if (existing) {
-        existing.dispose();
-        console.log('Shadow visualizer removed');
-      } else {
-        this.visualizeShadowMap();
-      }
-    };
-    globalThis.findLargeShadowCasters = () => this.findLargeShadowCasters();
 
     console.log('Shadow system configured with light direction:', light.direction.toString());
   }
@@ -237,7 +208,7 @@ export default class Environment {
           mesh.name.includes('characterRoot_')
       );
 
-      console.log(`Setting up shadows for ${playerMeshes.length} player meshes`);
+      // console.log(`Setting up shadows for ${playerMeshes.length} player meshes`);
 
       // Add them to shadow generator
       playerMeshes.forEach((mesh) => {
@@ -261,56 +232,6 @@ export default class Environment {
         .forEach((terrainMesh) => {
           terrainMesh.receiveShadows = true;
         });
-    }
-  }
-
-  visualizeShadowMap() {
-    if (this.shadowGenerator) {
-      const plane = MeshBuilder.CreatePlane(
-        'shadowVisualizer',
-        { width: 10, height: 5 },
-        this.scene
-      );
-      plane.position = new Vector3(0, 10, 0);
-
-      const material = new StandardMaterial('shadowVisMaterial', this.scene);
-      material.diffuseTexture = this.shadowGenerator.getShadowMap();
-      // material.diffuseTexture?.hasAlpha = false;
-      material.backFaceCulling = false;
-      plane.material = material;
-
-      console.log('Shadow map visualization created - press F to focus on it');
-      return plane;
-    }
-  }
-
-  findLargeShadowCasters() {
-    if (this.shadowGenerator) {
-      const shadowMap = this.shadowGenerator.getShadowMap();
-      if (shadowMap && shadowMap.renderList) {
-        console.log('Checking shadow casters...');
-        shadowMap.renderList.forEach((mesh) => {
-          // Check for unusually large meshes
-          if (mesh.getBoundingInfo) {
-            const bounds = mesh.getBoundingInfo();
-            const size = bounds.boundingBox.extendSize;
-            const maxDimension = Math.max(size.x, size.y, size.z);
-
-            if (maxDimension > 50) {
-              console.warn(`Large shadow caster found: ${mesh.name}, size: ${maxDimension}`);
-
-              // Optional: Highlight it for debugging
-              mesh.showBoundingBox = true;
-
-              // Optional: Remove it from shadow casters if it's the skybox or similar
-              if (mesh.name.includes('skyBox') || mesh.name.includes('sky')) {
-                console.log(`Removing ${mesh.name} from shadow casters`);
-                this.shadowGenerator?.removeShadowCaster(mesh);
-              }
-            }
-          }
-        });
-      }
     }
   }
 

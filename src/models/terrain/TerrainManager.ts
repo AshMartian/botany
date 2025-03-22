@@ -72,15 +72,12 @@ export default class TerrainManager {
   public async initialize(
     globalPosition: Vector3 = WorldManager.getGlobalPlayerPosition()
   ): Promise<void> {
-    console.log(`Initializing terrain at global position: ${globalPosition.toString()}`);
-
     // Store global position in world manager
     // WorldManager.setGlobalPlayerPosition(globalPosition);
 
     // Calculate chunk coordinates
     const chunkX = Math.floor(globalPosition.x / this.chunkSize);
     const chunkY = Math.floor(globalPosition.z / this.chunkSize);
-    console.log(`Initializing terrain around chunk coordinates (${chunkX}, ${chunkY})`);
 
     // Clear any existing chunks
     await this.clearAllChunks();
@@ -90,7 +87,6 @@ export default class TerrainManager {
       const centerChunk = await this.loadChunk(chunkX, chunkY, true);
 
       if (centerChunk) {
-        console.log(`Center chunk loaded at (${chunkX}, ${chunkY})`);
         this.lastPlayerChunkX = chunkX;
         this.lastPlayerChunkY = chunkY;
 
@@ -172,8 +168,8 @@ export default class TerrainManager {
     const currentChunkKey = `${playerChunkX}_${playerChunkY}`;
     if (!this.loadedChunks.has(currentChunkKey) && !this.loadingChunks.has(currentChunkKey)) {
       if (this.debugVerbose)
-        console.log(`Current chunk ${currentChunkKey} not loaded, loading immediately`);
-      this.loadChunk(playerChunkX, playerChunkY, true);
+        // console.log(`Current chunk ${currentChunkKey} not loaded, loading immediately`);
+        this.loadChunk(playerChunkX, playerChunkY, true);
     }
 
     // Only update chunk loading/unloading if player moved to a different chunk
@@ -212,7 +208,6 @@ export default class TerrainManager {
     const isPlayerChunk = x === this.lastPlayerChunkX && y === this.lastPlayerChunkY;
     if (isPlayerChunk) {
       highPriority = true;
-      console.log(`Prioritizing player's current chunk: ${key}`);
     }
 
     // Skip if already loaded
@@ -225,7 +220,7 @@ export default class TerrainManager {
       return null;
     }
 
-    console.log(`Loading terrain chunk (${x}, ${y})`);
+    // console.log(`Loading terrain chunk (${x}, ${y})`);
     this.loadingChunks.add(key);
 
     try {

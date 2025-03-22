@@ -22,6 +22,7 @@ export default class Character {
   scene: Scene;
   mesh: AbstractMesh | undefined;
   meshFoot: Mesh;
+  meshHead?: AbstractMesh;
   meshBody?: AbstractMesh;
   meshRoot?: AbstractMesh;
   playerId: string;
@@ -40,6 +41,7 @@ export default class Character {
     this.playerId = playerId;
     this.statePlayer = store.getPlayer(playerId);
     this.meshFoot = this.scene.getMeshById('playerFoot_' + playerId) as Mesh;
+    this.meshHead = this.scene.getMeshById('playerHead_' + playerId) as AbstractMesh;
     this.meshBodyId = 'characterBody_' + this.playerId;
     this.meshRootId = 'characterRoot_' + this.playerId;
 
@@ -116,10 +118,20 @@ export default class Character {
       });
 
       // Log shadow casters after everything is set up
-      // Log shadow casters after everything is set up
       this.logShadowCastersCount();
 
-      callback();
+      // Ensure meshes are fully ready before callback
+      if (this.meshHead && this.meshFoot && this.meshBody) {
+        // Force compute world matrix and update bounds
+        this.meshHead.computeWorldMatrix(true);
+        this.meshFoot.computeWorldMatrix(true);
+        this.meshBody.computeWorldMatrix(true);
+
+        // Signal that character is fully loaded
+        callback();
+      } else {
+        console.error('Character meshes not fully initialized');
+      }
     });
   }
 

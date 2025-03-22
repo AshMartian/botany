@@ -1,5 +1,6 @@
 import { Scene, KeyboardEventTypes } from '@babylonjs/core';
 import store from '@/store/store';
+import storeVuex from '@/store/vuex';
 import { Player } from '@/store/types';
 
 export default class Controller {
@@ -25,8 +26,13 @@ export default class Controller {
   }
 
   private keyEvent(e: any) {
-    const forward = { ...this.player.move.forward };
+    // Don't handle keyboard events when clicking inside inventory
+    const target = e.event.target as HTMLElement;
+    if (target.closest('.inventory-panel')) {
+      return;
+    }
 
+    const forward = { ...this.player.move.forward };
     const eventCode = e.event.code;
     const eventType = e.type;
 
@@ -54,6 +60,48 @@ export default class Controller {
 
       if (eventCode === 'Space') {
         store.setJump(this.playerId, true);
+      }
+
+      // Handle inventory opening with I key or Escape key or Tab key
+      if (eventCode === 'KeyI' || eventCode === 'Escape' || eventCode === 'Tab') {
+        const currentState = storeVuex.getters['inventory/isInventoryOpen'];
+
+        // Only handle opening the inventory, not closing
+        if (!currentState) {
+          console.log('Opening inventory from Controller');
+          storeVuex.commit('inventory/SET_INVENTORY_OPEN', true);
+
+          // Release pointer lock when opening inventory
+          if (document.pointerLockElement) {
+            document.exitPointerLock();
+            this.mouseIsCaptured = false;
+          }
+        }
+
+        // If inventory is already open, let the Inventory component handle closing
+        if (currentState) {
+          return;
+        }
+      }
+
+      // Hotbar selection with number keys (1-9)
+      if (eventCode.match(/^Digit[1-9]$/)) {
+        const slotIndex = parseInt(eventCode.replace('Digit', '')) - 1;
+        console.log(`Setting hotbar active slot to: ${slotIndex}`);
+        storeVuex.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
+
+        // Get the item in the selected slot
+        const slots = storeVuex.getters['hotbar/getAllSlots'];
+        const selectedSlot = slots.find((s: any) => s.slotIndex === slotIndex);
+
+        if (selectedSlot && selectedSlot.itemId) {
+          // If there's an item in the slot, use it
+          const item = storeVuex.getters['inventory/getItemById'](selectedSlot.itemId);
+          if (item && item.use) {
+            console.log(`Using item from hotbar: ${item.name}`);
+            // You could add visual feedback here
+          }
+        }
       }
     }
 
@@ -91,6 +139,12 @@ export default class Controller {
     const elementContent = document.getElementById('level') as HTMLElement;
 
     elementContent.addEventListener('click', (e) => {
+      // Check if inventory is open - don't capture if it is
+      const inventoryOpen = storeVuex.getters['inventory/isInventoryOpen'] || false;
+      if (inventoryOpen) {
+        return; // Don't capture mouse when inventory is open
+      }
+
       const checkFocusAvailable = e.composedPath().find((item) => {
         const itemChecked = item as HTMLElement;
         if (itemChecked.tagName !== undefined) {

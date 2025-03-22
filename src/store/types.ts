@@ -1,4 +1,5 @@
 import { Color3 } from '@babylonjs/core';
+import { IInventoryItem } from '../models/inventory/InventoryItem';
 
 export interface Forward {
   left: boolean;
@@ -35,7 +36,9 @@ export interface Player {
   character: string;
   skinColor: Color3;
   points: number;
+  inventory?: IInventoryItem[]; // Add inventory property to Player interface
 }
+
 export interface State {
   selfPlayerId: string | undefined;
   selfPlayer: Player | undefined;

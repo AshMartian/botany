@@ -6,13 +6,18 @@
       <MenuLevel />
       <Settings />
 
-      <div id="loading_overlay" v-if="this.$store.state.level.loading">
+      <div id="loading_overlay" v-if="isLoading">
         <div id="loading_overlay_text">{{ $t('message.loading') }}...</div>
       </div>
 
       <MobileJoystick v-if="isMobile"></MobileJoystick>
 
       <LevelPreview />
+
+      <!-- Add our new components -->
+      <Hotbar />
+      <Inventory />
+      <Crosshair />
     </div>
   </div>
 </template>
@@ -72,6 +77,9 @@ import MenuLevel from '@/views/gui/MenuLevel.vue';
 import Settings from '@/views/gui/Settings.vue';
 import { mapGetters } from 'vuex';
 import MobileJoystick from '@/views/gui/MobileJoystick.vue';
+import Hotbar from '@/views/gui/Hotbar.vue';
+import Inventory from '@/views/gui/Inventory.vue';
+import Crosshair from '@/views/gui/Crosshair.vue';
 
 export default defineComponent({
   name: 'game-level',
@@ -85,6 +93,9 @@ export default defineComponent({
     ...mapGetters(['finish']),
     isMobile() {
       return this.$store.state.isMobile;
+    },
+    isLoading() {
+      return this.$store.state.level?.loading ?? false;
     },
   },
   watch: {
@@ -100,6 +111,9 @@ export default defineComponent({
     LevelPreview,
     MenuLevel,
     Settings,
+    Hotbar,
+    Inventory,
+    Crosshair,
   },
 });
 </script>

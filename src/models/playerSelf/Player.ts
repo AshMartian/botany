@@ -13,7 +13,8 @@ class Player {
     const character = new Character(store.getSelfPlayerId());
 
     character.load(() => {
-      new Camera();
+      const camera = new Camera();
+      globalThis.camera = camera;
 
       if (!storeVuex.state.isMobile) {
         new Controller();

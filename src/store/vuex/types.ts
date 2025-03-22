@@ -46,6 +46,8 @@ export interface RootState {
   levelId: number;
   password: string | null;
   levels: Array<Level>;
+  interactionText?: string;
+  interactionKey?: string;
   settings: {
     environment: Environment;
   };

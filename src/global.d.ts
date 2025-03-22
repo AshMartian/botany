@@ -28,6 +28,7 @@ declare global {
   var toggleShadowMap: () => void;
   var findLargeShadowCasters: () => void;
   var terrainMaterials: { [key: string]: ShaderMaterial };
+  var camera: import('@/models/playerSelf/Camera').default;
 
   interface Window {
     store?: {
@@ -57,3 +58,7 @@ declare global {
     clamp(value: number, min: number, max: number): number;
   }
 }
+
+declare let globalThis: Window;
+
+export {};

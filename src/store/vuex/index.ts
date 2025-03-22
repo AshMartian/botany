@@ -2,6 +2,8 @@ import Vuex, { StoreOptions } from 'vuex';
 import { Level, RootState } from '@/store/vuex/types';
 import { settingsLevel } from '@/store/vuex/settingsLevel';
 import { level } from '@/store/vuex/level';
+import { inventory } from '@/store/vuex/inventory';
+import { hotbar } from '@/store/vuex/hotbar';
 import MobileDetect from 'mobile-detect';
 
 const store: StoreOptions<RootState> = {
@@ -12,6 +14,7 @@ const store: StoreOptions<RootState> = {
     levelId: 1,
     password: null,
     levels: [],
+    interactionText: '', // Initialize with empty string
     settings: {
       environment: {
         hdr: {
@@ -71,10 +74,18 @@ const store: StoreOptions<RootState> = {
     SET_ENVIRONMENT(state, environment) {
       state.settings.environment = environment;
     },
+    SET_INTERACTION_TEXT(state, text) {
+      state.interactionText = text;
+    },
+    SET_INTERACTION_KEY(state, key) {
+      state.interactionKey = key;
+    },
   },
   modules: {
     level,
     settingsLevel,
+    inventory,
+    hotbar,
   },
 };
 

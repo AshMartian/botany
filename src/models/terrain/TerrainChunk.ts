@@ -239,7 +239,7 @@ export default class TerrainChunk {
       this.mesh.visibility = 1;
       this.mesh.receiveShadows = true;
       // this.mesh.doNotSyncBoundingInfo = false;
-      this.mesh.metadata = { isTerrainChunk: true };
+      this.mesh.metadata = { isTerrainChunk: true, isInteractable: true };
       // Set name for shadow system to identify terrain chunks
       this.mesh.name = `terrain_chunk_${this.x}_${this.y}`;
 

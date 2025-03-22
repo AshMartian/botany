@@ -1,6 +1,8 @@
 import { State, Player, Forward, SyncData } from './types';
 import { isEqual } from 'lodash';
 import { Color3 } from '@babylonjs/core';
+import { IInventoryItem } from '../models/inventory/InventoryItem';
+import { playerInventory } from '../services/PlayerInventory';
 
 const playerExample: Player = {
   id: 'new',
@@ -31,12 +33,15 @@ const playerExample: Player = {
       characterAngle: 0,
     },
   },
+  inventory: [], // Initialize with empty inventory
 };
 
 export class Store {
   private state: State;
   private subscribers: { [key: string]: any[] } = {};
   private addPlayerSubscribers: any[] = [];
+  private inventorySubscribers: { [key: string]: any[] } = {};
+
   constructor() {
     this.state = {
       selfPlayerId: undefined,
@@ -101,7 +106,7 @@ export class Store {
 
   getSelfPlayerId() {
     if (this.state.selfPlayerId === undefined) {
-      throw 'PlayerID not set';
+      return 'PlayerID not set';
     }
 
     return this.state.selfPlayerId;
@@ -349,6 +354,101 @@ export class Store {
     for (const callback of this.addPlayerSubscribers) {
       callback(playerId, player);
     }
+  }
+
+  /**
+   * Give an item to a player
+   * @param playerId The ID of the player
+   * @param item The item to give
+   * @param quantity Optional quantity
+   */
+  giveItemToPlayer(playerId: string, item: IInventoryItem, quantity?: number): void {
+    const player = this.getPlayer(playerId);
+    if (!player.inventory) {
+      player.inventory = [];
+    }
+
+    // Use the PlayerInventory service for consistent item handling
+    playerInventory.giveItemToPlayer(playerId, item, quantity);
+
+    // Update the player's inventory in the store
+    player.inventory = playerInventory.getPlayerItems(playerId);
+
+    // Notify subscribers
+    this.notifySubscribers(playerId, 'inventory', player.inventory);
+  }
+
+  /**
+   * Give a resource to a player
+   * @param playerId The ID of the player
+   * @param resource The type of resource
+   */
+  giveResourceToPlayer(playerId: string, resource: IInventoryItem): void {
+    // Use the PlayerInventory service for resource creation and handling
+    playerInventory.giveItemToPlayer(playerId, resource);
+
+    // Update the player's inventory in the store
+    const player = this.getPlayer(playerId);
+    player.inventory = playerInventory.getPlayerItems(playerId);
+
+    // Notify subscribers
+    this.notifySubscribers(playerId, 'inventory', player.inventory);
+  }
+
+  /**
+   * Get a player's inventory
+   * @param playerId The ID of the player
+   */
+  getPlayerInventory(playerId: string): IInventoryItem[] {
+    const player = this.getPlayer(playerId);
+    return player.inventory || [];
+  }
+
+  /**
+   * Remove an item from a player's inventory
+   * @param playerId The ID of the player
+   * @param itemId The ID of the item
+   * @param quantity Optional quantity to remove
+   */
+  removeItemFromPlayer(playerId: string, itemId: string, quantity?: number): void {
+    // Use the PlayerInventory service
+    playerInventory.removeItemFromPlayer(playerId, itemId, quantity);
+
+    // Update the player's inventory in the store
+    const player = this.getPlayer(playerId);
+    player.inventory = playerInventory.getPlayerItems(playerId);
+
+    // Notify subscribers
+    this.notifySubscribers(playerId, 'inventory', player.inventory);
+  }
+
+  /**
+   * Subscribe to inventory changes for a player
+   * @param playerId The ID of the player
+   * @param callback The callback to invoke on inventory changes
+   */
+  subscribeToInventory(playerId: string, callback: (inventory: IInventoryItem[]) => void): void {
+    if (!this.inventorySubscribers[playerId]) {
+      this.inventorySubscribers[playerId] = [];
+    }
+
+    this.inventorySubscribers[playerId].push(callback);
+  }
+
+  /**
+   * Use an item from a player's inventory
+   * @param playerId The ID of the player
+   * @param itemId The ID of the item
+   */
+  usePlayerItem(playerId: string, itemId: string): void {
+    playerInventory.usePlayerItem(playerId, itemId);
+
+    // Update the player's inventory in the store
+    const player = this.getPlayer(playerId);
+    player.inventory = playerInventory.getPlayerItems(playerId);
+
+    // Notify subscribers
+    this.notifySubscribers(playerId, 'inventory', player.inventory);
   }
 }
 
