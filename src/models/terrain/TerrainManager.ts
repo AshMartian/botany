@@ -118,34 +118,48 @@ export default class TerrainManager {
     // Skip during teleportation
     if (this.isTeleporting) return;
 
-    // Throttle updates to improve performance - increase minimum update time
-    const now = Date.now();
-    if (now - this.lastChunkUpdate < 2000) return; // Increase to 2 seconds (was 1 second)
-    this.lastChunkUpdate = now;
+    // Convert player's engine position to global position for chunk calculations
+    const playerGlobalPos = WorldManager.toVirtual(playerEnginePosition);
 
-    // Get player's global position
-    const playerGlobalPos = WorldManager.getGlobalPlayerPosition();
-    if (!isFinite(playerGlobalPos.x) || !isFinite(playerGlobalPos.z)) return;
-
-    // Calculate player's chunk
+    // Calculate player's chunk coordinates
     const playerChunkX = Math.floor(playerGlobalPos.x / this.chunkSize);
     const playerChunkY = Math.floor(playerGlobalPos.z / this.chunkSize);
 
+    // Check if coordinates are valid
+    if (
+      !isFinite(playerChunkX) ||
+      !isFinite(playerChunkY) ||
+      playerChunkX < 0 ||
+      playerChunkX >= 144 ||
+      playerChunkY < 0 ||
+      playerChunkY >= 72
+    ) {
+      console.warn('Invalid player chunk coordinates:', playerChunkX, playerChunkY);
+      return;
+    }
+
+    // Throttle updates to avoid performance issues
+    const now = Date.now();
+    if (now - this.lastChunkUpdate < 1000) {
+      // Skip if it's been less than 1 second since last update
+      return;
+    }
+    this.lastChunkUpdate = now;
+
     console.log(`Player is on chunk (${playerChunkX}, ${playerChunkY})`);
 
-    // Make sure center chunk exists
+    // STEP 1: Make sure center chunk exists at high quality
     const centerKey = `${playerChunkX}_${playerChunkY}`;
     if (!this.loadedChunks.has(centerKey) && !this.loadingChunks.has(centerKey)) {
       this.loadPriorityChunk(playerChunkX, playerChunkY);
-    } else if (this.loadedChunks.has(centerKey)) {
-      // If the center chunk exists, force it to high quality and DON'T regenerate
-      this.loadedChunks.get(centerKey)!;
     }
 
-    // STEP 2: Load ONLY the immediate surrounding chunks (8 chunks)
+    // STEP 2: Load surrounding chunks (increase from 2 to 4 per update)
     const surroundingCoords = [];
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
+    const chunkRadius = Math.min(this.renderDistance, 2); // At most 2 chunks in each direction
+
+    for (let dx = -chunkRadius; dx <= chunkRadius; dx++) {
+      for (let dy = -chunkRadius; dy <= chunkRadius; dy++) {
         // Skip center chunk (already handled)
         if (dx === 0 && dy === 0) continue;
 
@@ -154,35 +168,45 @@ export default class TerrainManager {
 
         // Ensure valid coordinates
         if (x >= 0 && x < 144 && y >= 0 && y < 72) {
-          surroundingCoords.push({ x, y });
+          surroundingCoords.push({
+            x,
+            y,
+            priority: Math.max(Math.abs(dx), Math.abs(dy)), // Prioritize closer chunks
+          });
         }
       }
     }
 
-    // Load max 2 surrounding chunks per update to avoid framerate drops
+    // Sort by priority (closest first)
+    surroundingCoords.sort((a, b) => a.priority - b.priority);
+
+    // Load up to 4 chunks per update
     let loadedCount = 0;
     for (const { x, y } of surroundingCoords) {
       const key = `${x}_${y}`;
       if (!this.loadedChunks.has(key) && !this.loadingChunks.has(key)) {
-        if (loadedCount < 2) {
-          this.loadChunk(x, y); // Medium quality for adjacent chunks
+        if (loadedCount < 4) {
+          this.loadChunk(x, y);
           loadedCount++;
         }
       }
     }
 
-    // STEP 3: Aggressively unload distant chunks
+    // STEP 3: Unload distant chunks (increase distance threshold from 2 to 3)
+    const maxDistance = Math.max(3, this.renderDistance + 1);
     for (const [key, chunk] of this.loadedChunks.entries()) {
       const [x, y] = key.split('_').map(Number);
       const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(y - playerChunkY));
 
-      // Unload anything beyond immediate vicinity
-      if (distance > 2) {
-        console.log(`Unloading distant chunk at (${x}, ${y})`);
+      if (distance > maxDistance) {
+        console.log(`Unloading distant chunk at (${x}, ${y}), distance: ${distance}`);
         chunk.dispose();
         this.loadedChunks.delete(key);
       }
     }
+
+    // Update global player position to ensure future calculations are correct
+    WorldManager.setGlobalPlayerPosition(playerGlobalPos);
   }
 
   public async loadChunk(x: number, y: number): Promise<TerrainChunk | null> {

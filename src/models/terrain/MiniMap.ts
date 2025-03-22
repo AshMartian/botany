@@ -132,9 +132,10 @@ export default class MiniMap {
   private updateMapTiles(centerChunkX: number, centerChunkZ: number): void {
     console.log(`MiniMap: Updating tiles around chunk (${centerChunkX}, ${centerChunkZ})`);
 
-    // Ensure chunk coordinates are within valid range
-    centerChunkX = Math.max(0, Math.min(71, centerChunkX));
-    centerChunkZ = Math.max(0, Math.min(143, centerChunkZ));
+    // FIXED: Ensure chunk coordinates are within valid range
+    // Mars is 144 patches wide (X) and 72 patches tall (Z)
+    centerChunkX = Math.max(0, Math.min(143, centerChunkX));
+    centerChunkZ = Math.max(0, Math.min(71, centerChunkZ));
 
     // Clear grid
     this.mapGrid.children.slice().forEach((child) => {
@@ -149,7 +150,7 @@ export default class MiniMap {
         const chunkZ = centerChunkZ + (row - 1);
 
         // Check if chunk is valid
-        const isValidChunk = chunkX >= 0 && chunkX < 72 && chunkZ >= 0 && chunkZ < 144;
+        const isValidChunk = chunkX >= 0 && chunkX < 144 && chunkZ >= 0 && chunkZ < 72;
 
         // Create container for the tile
         const tileContainer = new Rectangle();
@@ -159,8 +160,11 @@ export default class MiniMap {
 
         // Only attempt to load valid chunks
         if (isValidChunk) {
-          // Important: Z and X are intentionally swapped here based on the API format
+          // FIXED: Use correct URL format - respect the heightmap URL pattern
+          // Following the pattern from TerrainChunk.fetchHeightmapData
+          // patch_Z_X.raw where Z is vertical (0-71) and X is horizontal (0-143)
           const imageUrl = `https://ashmartian.com/mars/patch_${chunkZ}_${chunkX}_color.jpg`;
+
           // Create image
           const tileImage = new Image(`map_tile_${chunkX}_${chunkZ}`, imageUrl);
           tileImage.stretch = Image.STRETCH_FILL;

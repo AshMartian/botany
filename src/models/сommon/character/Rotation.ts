@@ -98,7 +98,7 @@ export default class Rotation {
       }
     }
     if (!this.meshFoot) {
-      console.log('Could not find meshFoot');
+      // console.log('Could not find meshFoot');
       return;
     }
 

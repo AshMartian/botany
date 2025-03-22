@@ -47,6 +47,11 @@ export default class Controller {
         forward.right = true;
       }
 
+      // Add shift key detection for sprint
+      if (eventCode === 'ShiftLeft' || eventCode === 'ShiftRight') {
+        forward.sprint = true;
+      }
+
       if (eventCode === 'Space') {
         store.setJump(this.playerId, true);
       }
@@ -67,6 +72,11 @@ export default class Controller {
 
       if (eventCode === 'KeyD') {
         forward.right = false;
+      }
+
+      // Add shift key detection for sprint
+      if (eventCode === 'ShiftLeft' || eventCode === 'ShiftRight') {
+        forward.sprint = false;
       }
 
       if (eventCode === 'Space') {

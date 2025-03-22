@@ -181,6 +181,16 @@ export default class Character {
 
   private playSoundByState(player: Player, sound: PlayerSound) {
     if (!this.blockedOtherSounds) {
+      // Check if player is sprinting (either from keyboard or joystick)
+      if (
+        player.move.forward.sprint &&
+        (player.move.speedType == 'Run' || player.move.speedType == 'Sprint')
+      ) {
+        sound.stopWalk();
+        sound.playSprint();
+        return;
+      }
+
       if (player.move.speedType == 'Run') {
         sound.stopSprint();
         sound.playRun();

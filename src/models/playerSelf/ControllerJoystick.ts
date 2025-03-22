@@ -22,12 +22,16 @@ export default class ControllerJoystick {
     const oldForward = store.getSelfPlayer().move.forward;
     const direction = this.getDirection(nippleData.angle.degree);
 
+    // Preserve the sprint state from keyboard if it exists
+    const currentSprint = oldForward.sprint;
+
     const forward: Forward = {
       right: direction.right,
       front: direction.front,
       left: direction.left,
       back: direction.back,
-      sprint: distance > 40,
+      // Use joystick distance for sprint on mobile, but don't override keyboard sprint
+      sprint: currentSprint || distance > 40,
       isMoving: false,
     };
 
@@ -37,13 +41,17 @@ export default class ControllerJoystick {
   }
 
   moveEnd() {
+    // Get current sprint state from keyboard if it exists
+    const currentSprint = store.getSelfPlayer().move.forward.sprint;
+
     store.setForward(this.playerId, {
       left: false,
       right: false,
       back: false,
       front: false,
       isMoving: false,
-      sprint: false,
+      // Preserve sprint state from keyboard
+      sprint: currentSprint,
     });
   }
 
