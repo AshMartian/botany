@@ -617,15 +617,6 @@ export default class TerrainChunk {
     }
   }
 
-  public stitchWithNeighbor(
-    neighbor: TerrainChunk,
-    direction: 'left' | 'right' | 'top' | 'bottom'
-  ): void {
-    if (!this.mesh || !neighbor.mesh) {
-      return;
-    }
-  }
-
   public dispose(): void {
     if (this.mesh) {
       this.mesh.dispose();

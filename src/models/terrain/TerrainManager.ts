@@ -51,12 +51,8 @@ export default class TerrainManager {
   private lastUpdateTime = 0; // Track last update time
   private debugVerbose = false; // Control verbose logging
 
-  // Stability controls
-  private chunkStabilizationTimeout: any = null;
-  private mapUpdateTimer: any = null;
+  // Lock to prevent concurrent updates
   private loadingLock = false;
-  private lastPlayerPosition: Vector3 | null = null;
-  private maxChunkJumpPerFrame = 1;
 
   constructor(scene: BabylonScene, chunkSize = 128, renderDistance = 1) {
     this.scene = scene;
@@ -150,9 +146,6 @@ export default class TerrainManager {
     // Calculate current chunk coordinates
     const playerChunkX = Math.floor(playerGlobalPos.x / this.chunkSize);
     const playerChunkY = Math.floor(playerGlobalPos.z / this.chunkSize);
-
-    // Store current position for next frame
-    this.lastPlayerPosition = playerEngineCopy.clone();
 
     // Sanity check coordinates to catch corrupted positions
     if (
@@ -611,24 +604,6 @@ export default class TerrainManager {
         this.loadChunk(x, y, false);
       }
     }
-  }
-
-  /**
-   * Log detailed chunk status for debugging
-   */
-  private logChunkStatus(): void {
-    if (!this.debugVerbose) return;
-
-    const allChunks = Array.from(this.loadedChunks.keys());
-    const loadingChunks = Array.from(this.loadingChunks);
-
-    console.log(`=== TERRAIN STATUS ===
-    Player at chunk: (${this.lastPlayerChunkX}, ${this.lastPlayerChunkY})
-    Loaded chunks: ${this.loadedChunks.size}
-    Loading chunks: ${this.loadingChunks.size}
-    Active chunks: ${allChunks.join(', ')}
-    Loading: ${loadingChunks.join(', ')}
-  `);
   }
 
   public processChunkUpdate(message: { type: string; payload: any }): void {
