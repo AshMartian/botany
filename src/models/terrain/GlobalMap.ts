@@ -107,7 +107,7 @@ export default class GlobalMap {
       '/resources/images/mars/mars_2k_color.jpg',
       this.scene,
       false, // NoMipmap
-      true, // InvertY
+      false,
       Texture.TRILINEAR_SAMPLINGMODE
     );
 
@@ -125,11 +125,6 @@ export default class GlobalMap {
     marsMaterial.diffuseColor = new Color3(0.5, 0.3, 0.2); // Fallback color
     marsMaterial.specularColor = new Color3(0.2, 0.2, 0.2);
     marsMaterial.emissiveColor = new Color3(0.1, 0.1, 0.1); // Add some self-illumination
-
-    // Add texture loading logging
-    // marsMaterial.diffuseTexture.isReadyOrNotBlocking.add(() => {
-    //   console.log("Mars texture loaded successfully");
-    // });
 
     marsMaterial.bumpTexture = new Texture('/resources/images/mars/mars_2k_normal.jpg', this.scene);
 

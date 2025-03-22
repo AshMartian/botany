@@ -126,20 +126,12 @@ export default class GameScene {
   }
 
   setEnvironment() {
-    fetch('./resources/graphics/environment.json')
-      .then((response) => response.json())
-      .then((json) => {
-        storeVuex.commit('SET_ENVIRONMENT', json);
-
-        const environment = new Environment();
-        environment.setupHDR();
-        environment.setupGlow();
-        // environment.setupSSAO()
-        environment.setupFog();
-        environment.setupLightAndShadow();
-        environment.setupLightPoints();
-        // environment.setupSky()
-        //environment.setupSkybox()
-      });
+    const environment = new Environment();
+    environment.setupHDR();
+    environment.setupGlow();
+    environment.setupSSAO();
+    environment.setupFog();
+    environment.setupLightAndShadow();
+    environment.setupLightPoints();
   }
 }

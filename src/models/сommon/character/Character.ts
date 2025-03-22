@@ -45,7 +45,7 @@ export default class Character {
 
     const boundingInfo = this.meshFoot.getBoundingInfo();
     this.offsetY = (boundingInfo.maximum.y - boundingInfo.minimum.y) / 2 + 0.13;
-    this.particleSystem = new ParticleSystem('particles', 100, scene);
+    this.particleSystem = new ParticleSystem('particles', 100, this.scene);
     this.blockedOtherSounds = false;
 
     this.createSmokeParticles();
@@ -65,9 +65,19 @@ export default class Character {
       const rootMesh = container.rootNodes[0];
       rootMesh.id = this.meshRootId;
 
+      // First add the root mesh as a shadow caster
+      if (globalThis.shadowGenerator) {
+        globalThis.shadowGenerator.addShadowCaster(rootMesh.getChildMeshes()[0]);
+        globalThis.shadowGenerator.getShadowMap()?.renderList?.push(rootMesh.getChildMeshes()[0]);
+        console.log(`Added player root mesh ${this.meshRootId} as shadow caster`);
+      }
+
       container.rootNodes[0].getChildMeshes().forEach((mesh) => {
         if (globalThis.shadowGenerator) {
           globalThis.shadowGenerator.addShadowCaster(mesh);
+          globalThis.shadowGenerator.getShadowMap()?.renderList?.push(mesh);
+          // Also make sure each mesh can cast shadows properly
+          mesh.receiveShadows = true; // Player meshes don't need to receive their own shadows
         }
 
         if (mesh.name == 'Hair') {
@@ -104,6 +114,10 @@ export default class Character {
       this.observer = this.scene.onBeforeRenderObservable.add(() => {
         this.beforeRender();
       });
+
+      // Log shadow casters after everything is set up
+      // Log shadow casters after everything is set up
+      this.logShadowCastersCount();
 
       callback();
     });
@@ -213,7 +227,7 @@ export default class Character {
   private createSmokeParticles() {
     this.particleSystem.particleTexture = new Texture(
       './resources/graphics/textures/smoke.png',
-      scene
+      this.scene
     );
     this.particleSystem.minEmitBox = new Vector3(-0.2, -0.1, -0.2); // Starting all from
     this.particleSystem.maxEmitBox = new Vector3(0.1, 0.1, 0.1); // To...
@@ -255,6 +269,33 @@ export default class Character {
           this.meshFoot.position.y - this.offsetY,
           this.meshFoot.position.z
         );
+      }
+    }
+  }
+
+  private logShadowCastersCount() {
+    if (globalThis.shadowGenerator) {
+      const shadowMap = globalThis.shadowGenerator.getShadowMap();
+      if (shadowMap && shadowMap.renderList) {
+        console.log(`Shadow generator now has ${shadowMap.renderList.length} shadow casters`);
+
+        // Force shadow generator to update
+        globalThis.shadowGenerator.forceBackFacesOnly = false;
+        if (shadowMap) {
+          shadowMap.refreshRate = 1; // Update every frame
+        }
+
+        // Ensure player meshes cast shadows but don't receive them
+        this.scene.meshes.forEach((mesh) => {
+          if (
+            mesh.name.includes('player_') ||
+            mesh.name.includes('playerFoot_') ||
+            mesh.name.includes('characterRoot_') ||
+            mesh.name.includes('_' + this.playerId)
+          ) {
+            mesh.receiveShadows = false;
+          }
+        });
       }
     }
   }

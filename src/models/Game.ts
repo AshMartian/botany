@@ -15,8 +15,6 @@ import Collisions from '@/models/mehanics/Collisions';
 import Canvas from '@/models/scene/Canvas';
 import Points from '@/models/mehanics/Points';
 import DevMode from '@/models/scene/DevMode';
-import TerrainChunk from './terrain/TerrainChunk';
-import Savepoint from '@/models/mehanics/Savepoint';
 import BlendModes from '@/models/scene/BlendModes';
 import Materials from '@/models/scene/Materials';
 import OutLiner from '@/models/scene/OutLiner';
@@ -33,8 +31,7 @@ export default class Game {
   private debugMode = false;
   private debugVerboseLogging = false;
   private lastEngineDistanceCheckTime = 0;
-  private terrainStabilityCheckTime = 0;
-  private readonly TERRAIN_CHECK_INTERVAL = 5000; // Check every 5 seconds
+
   init() {
     // Apply safety patch to collision system
     // safetyPatchCollisionSystem();
@@ -101,7 +98,7 @@ export default class Game {
     globalThis.collisions = new Collisions();
 
     // Initialize terrain system first
-    window.terrainManager = new TerrainManager(window.scene!, 128, 2); // Use 128 chunk size with render distance 2
+    window.terrainManager = new TerrainManager(window.scene!, 128, 4);
 
     console.log(
       'Using position for spawn:',
@@ -117,9 +114,14 @@ export default class Game {
       PlayerSelf.init(async () => {
         // Use the player spawner to spawn the player
         await this.playerSpawner.spawnPlayer(spawnPosition);
+
+        // Set up player shadows after player is fully loaded
+        if (globalThis.environment) {
+          globalThis.environment.setupPlayerShadows();
+        }
+
         callback();
 
-        Savepoint.init();
         Materials.addCustomMaterial();
         BlendModes.init();
         OutLiner.init();
@@ -134,7 +136,6 @@ export default class Game {
       // Fallback initialization
       PlayerSelf.init(() => {
         callback();
-        Savepoint.init();
         Materials.addCustomMaterial();
         BlendModes.init();
         OutLiner.init();

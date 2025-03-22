@@ -26,12 +26,12 @@ const store: StoreOptions<RootState> = {
         },
         fog: {
           color: {
-            r: 0.208,
-            g: 0.337,
-            b: 0.51,
+            r: 0.54,
+            g: 0.39,
+            b: 0.29,
           },
           density: 0.01,
-          mode: 1,
+          mode: 2,
         },
         directionalLight: {
           intensity: 1,

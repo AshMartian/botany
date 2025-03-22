@@ -54,7 +54,7 @@ export default class TerrainManager {
   // Lock to prevent concurrent updates
   private loadingLock = false;
 
-  constructor(scene: BabylonScene, chunkSize = 128, renderDistance = 1) {
+  constructor(scene: BabylonScene, chunkSize = 128, renderDistance = 3) {
     this.scene = scene;
     this.loadedChunks = new Map();
     this.loadingChunks = new Set();

@@ -1,11 +1,12 @@
 /* eslint-disable no-var */
-import { CascadedShadowGenerator, Scene, ShadowGenerator, Vector3 } from '@babylonjs/core';
+import { Scene, ShadowGenerator, Vector3, ShaderMaterial } from '@babylonjs/core';
 import { Container } from '@/models/scene/ContainerManager';
 import Collisions from '@/models/mehanics/Collisions';
 import { PrefabItem } from '@/models/scene/Prefabs';
 import TerrainManager from '@/models/terrain/TerrainManager';
 import MiniMap from '@/models/terrain/MiniMap';
 import GlobalMap from '@/models/terrain/GlobalMap';
+import Environment from './models/scene/Environment';
 
 declare module '*.scss' {
   const content: { [className: string]: string };
@@ -22,6 +23,11 @@ declare global {
   var collisions: Collisions;
   var shadowGenerator: ShadowGenerator;
   var average: number;
+  var environment: Environment;
+  var visualizeShadowMap: () => void;
+  var toggleShadowMap: () => void;
+  var findLargeShadowCasters: () => void;
+  var terrainMaterials: { [key: string]: ShaderMaterial };
 
   interface Window {
     store?: {

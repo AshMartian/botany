@@ -8,8 +8,8 @@ export default class Sky {
 
     particleSystem.emitter = scene.getMeshById('Ship');
 
-    particleSystem.color1 = new Color4(0.7, 0.8, 1.0, 1.0);
-    particleSystem.color2 = new Color4(0.2, 0.5, 1.0, 1.0);
+    particleSystem.color1 = new Color4(0.65, 0.56, 0.35, 1.0);
+    particleSystem.color2 = new Color4(0.65, 0.56, 0.35, 1.0);
     particleSystem.colorDead = new Color4(0, 0, 0.2, 0.0);
 
     particleSystem.minSize = 0.1;
@@ -29,6 +29,6 @@ export default class Sky {
     particleSystem.maxEmitPower = 0;
     particleSystem.updateSpeed = 0.005;
 
-    particleSystem.start();
+    // particleSystem.start();
   }
 }
