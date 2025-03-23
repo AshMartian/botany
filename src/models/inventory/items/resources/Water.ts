@@ -2,7 +2,7 @@ import { Resource } from '../../../inventory/Resource';
 
 export class Water extends Resource {
   constructor(quantity = 1, id = 'water', name = 'Water', iconPath = '/assets/textures/water.png') {
-    super(id, name, iconPath, true, 999, quantity);
+    super(quantity, id, name, iconPath, true, 60);
   }
 
   public override getColor(): string {

@@ -1,8 +1,13 @@
 import { Resource } from '../../../inventory/Resource';
 
 export class Metal extends Resource {
-  constructor(quantity = 1, id = 'metal', name = 'Metal', iconPath = '/assets/textures/metal.png') {
-    super(id, name, iconPath, true, 999, quantity);
+  constructor(
+    quantity = 1,
+    id = 'metal',
+    name = 'Metal',
+    iconPath = '/resources/textures/items/metal.jpg'
+  ) {
+    super(quantity, id, name, iconPath, true, 5);
   }
 
   public override getColor(): string {

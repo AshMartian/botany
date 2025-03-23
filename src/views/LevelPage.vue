@@ -15,7 +15,7 @@
       <LevelPreview />
 
       <!-- Add our new components -->
-      <Hotbar />
+      <Hotbar :inInventory="false" />
       <Inventory />
       <Crosshair />
     </div>
@@ -72,7 +72,6 @@ body {
 import { defineComponent } from 'vue';
 import Game from '@/models/Game';
 import TopBar from '@/views/gui/topbar/TopBar.vue';
-import LevelPreview from '@/views/LevelPreview.vue';
 import MenuLevel from '@/views/gui/MenuLevel.vue';
 import Settings from '@/views/gui/Settings.vue';
 import { mapGetters } from 'vuex';
@@ -101,14 +100,14 @@ export default defineComponent({
   watch: {
     finish(value) {
       if (value) {
-        this.$store.commit('SET_PAGE', 'FinishPage');
+        // this.$store.commit('SET_PAGE', 'FinishPage');
+        this.$store.commit('SET_PLAY');
       }
     },
   },
   components: {
     MobileJoystick,
     TopBar,
-    LevelPreview,
     MenuLevel,
     Settings,
     Hotbar,

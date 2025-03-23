@@ -4,11 +4,9 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue';
-import LevelsPage from '@/views/LevelsPage.vue';
 import PlayWithFiendsPage from '@/views/PlayWithFiendsPage.vue';
 import LevelPage from '@/views/LevelPage.vue';
 import MainPage from '@/views/MainPage.vue';
-import FinishPage from '@/views/FinishPage.vue';
 
 export default defineComponent({
   computed: {
@@ -17,10 +15,8 @@ export default defineComponent({
     },
   },
   components: {
-    LevelsPage,
     MainPage,
     LevelPage,
-    FinishPage,
     PlayWithFiendsPage,
   },
 });

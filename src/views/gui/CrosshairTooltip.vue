@@ -31,7 +31,7 @@ export default defineComponent({
 <style lang="scss" scoped>
 .crosshair-tooltip {
   position: fixed;
-  left: 50%;
+  right: calc(50% - 4rem);
   top: 50%;
   transform: translate(-50%, 30px);
   background: rgba(0, 0, 0, 0.75);
@@ -41,6 +41,9 @@ export default defineComponent({
   font-family: 'Play', sans-serif;
   pointer-events: none;
   z-index: 1000;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px) saturate(180%);
+  transition: opacity 0.3s ease;
 
   .tooltip-content {
     display: flex;
@@ -51,7 +54,9 @@ export default defineComponent({
       background: rgba(255, 255, 255, 0.2);
       padding: 2px 8px;
       border-radius: 3px;
-      font-size: 14px;
+      font-size: 18px;
+      text-align: center;
+      letter-spacing: normal;
     }
 
     .text {

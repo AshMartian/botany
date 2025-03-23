@@ -10,7 +10,7 @@
     "build": "vue-cli-service build --dest ../lola-build/dist",
     "serve": "vue-cli-service serve",
     "lint": "prettier --write --log-level=silent . && vue-cli-service lint",
-    "validate": "tsc --noEmit && prettier --write . && npm run lint"
+    "validate": "tsc --noEmit --project ./tsconfig.json && npm run lint"
   },
   "dependencies": {
     "@babylonjs/inspector": "^6.25.0",

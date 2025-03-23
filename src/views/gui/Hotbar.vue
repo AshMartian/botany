@@ -1,29 +1,25 @@
 <template>
-  <div class="hotbar-container">
+  <div class="hotbar-container" :class="{ 'inventory-mode': inInventory }">
     <div
-      v-for="slot in slots"
-      :key="slot.slotIndex"
+      v-for="slotIndex in 9"
+      :key="'hotbar-' + (slotIndex - 1)"
       class="hotbar-slot"
-      :class="{ active: slot.slotIndex === activeSlot }"
-      @click="selectSlot(slot.slotIndex)"
+      :class="{ active: slotIndex - 1 === activeSlot }"
+      @click="selectSlot(slotIndex - 1)"
       @dragover.prevent
-      @drop="onDropToHotbar($event, slot.slotIndex)"
+      @drop="onDropToHotbar($event, slotIndex - 1)"
     >
-      <div v-if="getItemForSlot(slot)" class="item-container">
-        <img
-          :src="getItemForSlot(slot)?.iconPath || '/assets/textures/default-item.png'"
-          :alt="getItemForSlot(slot)?.name"
-          class="item-icon"
-        />
-        <div
-          class="item-quantity"
-          v-if="getItemForSlot(slot)?.stackable && getItemForSlot(slot)?.quantity > 1"
-        >
-          {{ getItemForSlot(slot)?.quantity }}
-        </div>
-        <div class="item-tooltip">{{ getItemForSlot(slot)?.name }}</div>
-      </div>
-      <div class="slot-number">{{ slot.slotIndex + 1 }}</div>
+      <InventoryItem
+        v-if="getItemAtPosition('hotbar', slotIndex - 1)"
+        :item="getItemAtPosition('hotbar', slotIndex - 1)"
+        :slot-number="slotIndex"
+        :show-slot-number="true"
+        :removable="true"
+        :slot-id="'hotbar-' + (slotIndex - 1)"
+        :is-hotbar-item="true"
+        @remove="removeItemFromSlot(slotIndex - 1)"
+      />
+      <div v-else class="slot-number">{{ slotIndex }}</div>
     </div>
   </div>
 </template>
@@ -31,41 +27,84 @@
 <script lang="ts">
 import { defineComponent, computed } from 'vue';
 import { useStore } from 'vuex';
+import InventoryItem from './InventoryItem.vue';
 
 export default defineComponent({
   name: 'GameHotbar',
 
+  components: {
+    InventoryItem,
+  },
+
+  props: {
+    // Add a prop to adjust styling/behavior when used within inventory
+    inInventory: {
+      type: Boolean,
+      default: false,
+    },
+  },
+
   setup() {
     const store = useStore();
-
-    const slots = computed(() => store.getters['hotbar/getAllSlots']);
     const activeSlot = computed(() => store.getters['hotbar/getActiveSlot']);
 
-    const getItemForSlot = (slot: { itemId: string | null }) => {
-      if (!slot.itemId) return null;
-      return store.getters['inventory/getItemById'](slot.itemId);
+    const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
+      return store.getters['inventory/getItemAtPosition'](type, index);
     };
 
     const selectSlot = (slotIndex: number) => {
       store.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
     };
 
-    const onDropToHotbar = (event: DragEvent, slotIndex: number) => {
+    const onDropToHotbar = (event: any, slotIndex: number) => {
       event.preventDefault();
       if (event.dataTransfer) {
         const itemId = event.dataTransfer.getData('itemId');
+
         if (itemId) {
-          store.dispatch('hotbar/equipItemToSlot', { slotIndex, itemId });
+          // Move the item to the hotbar position
+          store.dispatch('inventory/moveItem', {
+            itemId,
+            newPosition: {
+              type: 'hotbar',
+              index: slotIndex,
+            },
+          });
+        }
+      }
+    };
+
+    const removeItemFromSlot = (slotIndex: number) => {
+      // Find the item at this hotbar position
+      const item = getItemAtPosition('hotbar', slotIndex);
+      if (item) {
+        // Find an empty inventory slot
+        let emptySlotIndex = 0;
+        while (getItemAtPosition('inventory', emptySlotIndex) && emptySlotIndex < 27) {
+          emptySlotIndex++;
+        }
+
+        if (emptySlotIndex < 27) {
+          // Move the item to the inventory
+          store.dispatch('inventory/moveItem', {
+            itemId: item.id,
+            newPosition: {
+              type: 'inventory',
+              index: emptySlotIndex,
+            },
+          });
+        } else {
+          console.warn('Inventory is full, item cannot be moved from hotbar');
         }
       }
     };
 
     return {
-      slots,
       activeSlot,
-      getItemForSlot,
+      getItemAtPosition,
       selectSlot,
       onDropToHotbar,
+      removeItemFromSlot,
     };
   },
 });
@@ -87,6 +126,16 @@ export default defineComponent({
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
+/* Styling for when the hotbar is used inside the inventory */
+.hotbar-container.inventory-mode {
+  position: static;
+  transform: none;
+  background-color: transparent;
+  box-shadow: none;
+  padding: 0;
+  justify-content: center;
+}
+
 .hotbar-slot {
   background-color: rgba(60, 60, 60, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -101,6 +150,11 @@ export default defineComponent({
   transition: all 0.2s ease;
 }
 
+.inventory-mode .hotbar-slot {
+  width: 70px;
+  height: 70px;
+}
+
 .hotbar-slot:hover {
   background-color: rgba(80, 80, 80, 0.7);
   transform: translateY(-2px);
@@ -110,54 +164,6 @@ export default defineComponent({
   border-color: rgba(255, 215, 0, 0.8);
   box-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
   transform: translateY(-3px);
-}
-
-.item-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  padding: 5px;
-  position: relative;
-}
-
-.item-icon {
-  max-width: 80%;
-  max-height: 70%;
-  object-fit: contain;
-}
-
-.item-quantity {
-  position: absolute;
-  bottom: 5px;
-  right: 5px;
-  background-color: rgba(0, 0, 0, 0.6);
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-size: 12px;
-  color: white;
-}
-
-.item-tooltip {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: rgba(0, 0, 0, 0.8);
-  color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  z-index: 101;
-}
-
-.item-container:hover .item-tooltip {
-  opacity: 1;
 }
 
 .slot-number {

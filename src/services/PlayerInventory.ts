@@ -1,8 +1,13 @@
 // src/services/PlayerInventory.ts
+import { openDB } from 'idb';
 import store from '../store/store';
-import { IInventoryItem } from '../models/inventory/InventoryItem';
-import { Resource } from '../models/inventory/Resource';
-import { Metal, Silicon, Water, Regolith } from '../models/inventory/items/resources';
+import storeVuex from '@/store/vuex';
+import { IInventoryItem, InventoryItem } from '@/models/inventory/InventoryItem';
+import * as items from '@/models/inventory/items';
+
+const DB_NAME = 'game-inventory';
+const DB_VERSION = 2;
+const STORE_NAME = 'player-inventories';
 
 // Player inventory tracking - will be integrated with the Store
 export interface PlayerItems {
@@ -18,7 +23,78 @@ class PlayerInventoryService {
   private maxInventorySize = 100; // Default max inventory size
 
   constructor() {
-    // Initialize with empty inventories
+    this.playerItems = {};
+    this.maxInventorySize = 100;
+  }
+
+  public async initialize(): Promise<IInventoryItem[]> {
+    const playerId = store.getSelfPlayerId();
+    if (playerId) {
+      const items = await this.loadFromIndexedDB(playerId);
+      return items;
+    }
+    return [];
+  }
+
+  private async initializeDB() {
+    const db = await openDB(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      },
+    });
+    return db;
+  }
+
+  private async saveToIndexedDB(playerId: string) {
+    const db = await this.initializeDB();
+    const itemsToStore = this.playerItems[playerId].map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+    }));
+    await db.put(STORE_NAME, itemsToStore, playerId);
+  }
+
+  private async loadFromIndexedDB(playerId: string) {
+    console.log('Loading inventory from IndexedDB for player:', playerId);
+    const db = await this.initializeDB();
+    const storedItems = await db.get(STORE_NAME, playerId);
+    console.log('Loaded items from IndexedDB:', storedItems);
+
+    // Initialize empty array if no items found
+    this.playerItems[playerId] = [];
+
+    if (storedItems) {
+      for (const storedItem of storedItems) {
+        const item = this.createItemFromId(storedItem.id, storedItem.quantity);
+        if (item) {
+          this.playerItems[playerId].push(item);
+        }
+      }
+    }
+
+    // Update store's player inventory
+    const player = store.getPlayer(playerId);
+    if (player) {
+      player.inventory = [...this.playerItems[playerId]];
+    }
+
+    return this.playerItems[playerId];
+  }
+
+  private createItemFromId(id: string, quantity: number): IInventoryItem | null {
+    // Implement logic to create an item instance based on the id
+    // This is a placeholder implementation
+    const itemClasses = items;
+    for (const ItemClass of Object.values(itemClasses)) {
+      const item = new ItemClass(quantity);
+      if (item.id === id) {
+        return item.serialize();
+      }
+    }
+    console.warn(`Item with ID ${id} not found`);
+    return null;
   }
 
   /**
@@ -27,12 +103,11 @@ class PlayerInventoryService {
    * @param item The item to give to the player
    * @param quantity Optional quantity (defaults to item's quantity)
    */
-  public giveItemToPlayer(playerId: string, item: IInventoryItem, quantity?: number): void {
-    // Ensure player has an inventory
-    if (!this.playerItems[playerId]) {
-      this.playerItems[playerId] = [];
-    }
-
+  public async giveItemToPlayer(
+    playerId: string,
+    item: IInventoryItem,
+    quantity?: number
+  ): Promise<void> {
     // Clone the item to avoid reference issues
     const itemToAdd = this.cloneItem(item);
 
@@ -71,6 +146,9 @@ class PlayerInventoryService {
       this.playerItems[playerId].push(itemToAdd);
     }
 
+    // Save to IndexedDB
+    await this.saveToIndexedDB(playerId);
+
     // Notify any listeners about inventory update
     this.notifyInventoryUpdate(playerId);
   }
@@ -80,6 +158,11 @@ class PlayerInventoryService {
    * @param playerId The unique ID of the player
    */
   public getPlayerItems(playerId: string): IInventoryItem[] {
+    // Ensure player has an inventory
+    if (!this.playerItems[playerId]) {
+      this.playerItems[playerId] = [];
+      this.loadFromIndexedDB(playerId);
+    }
     return this.playerItems[playerId] || [];
   }
 
@@ -148,19 +231,37 @@ class PlayerInventoryService {
   }
 
   private notifyInventoryUpdate(playerId: string): void {
-    // In the future, this could emit events or update UI
-    // For now, it's a placeholder for inventory change notifications
     console.log(`Inventory updated for player ${playerId}`);
 
-    // Add integration with the custom Store when needed
-    // This would push inventory changes to the Store
+    // Get the updated items
+    const items = this.playerItems[playerId] || [];
+
+    // Update Vuex store
+    storeVuex.commit('inventory/SET_ITEMS', items);
+
+    // Update custom Store
+    const player = store.getPlayer(playerId);
+    if (player) {
+      player.inventory = [...items];
+      store.notifySubscribers(playerId, 'inventory', items);
+    }
   }
 
   // Integration with Store system
   public syncWithStore(playerId: string): void {
-    // This will be implemented to sync with the custom Store when needed
-    if (store && playerId) {
-      // Future implementation for syncing with Store
+    if (!playerId) return;
+
+    // Get current items for the player
+    const items = this.playerItems[playerId] || [];
+
+    // Update Vuex store
+    storeVuex.commit('inventory/SET_ITEMS', items);
+
+    // Update custom Store
+    const player = store.getPlayer(playerId);
+    if (player) {
+      player.inventory = [...items];
+      store.notifySubscribers(playerId, 'inventory', items);
     }
   }
 

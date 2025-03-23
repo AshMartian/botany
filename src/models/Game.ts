@@ -113,6 +113,8 @@ export default class Game {
     );
 
     try {
+      await storeVuex.dispatch('inventory/initializeInventory');
+
       // Initialize terrain system first
       await window.terrainManager.initialize(spawnPosition);
 

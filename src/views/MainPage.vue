@@ -47,7 +47,8 @@ export default defineComponent({
     },
     play() {
       this.$store.commit('SET_PASSWORD', null);
-      this.$store.commit('SET_PAGE', 'LevelsPage');
+      this.$store.commit('SET_PAGE', 'LevelPage');
+      // this.$store.commit('SET_PLAY');
     },
   },
 });

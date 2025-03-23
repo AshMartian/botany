@@ -4,60 +4,35 @@
       <h2>Inventory</h2>
       <button class="close-btn" @click="closeInventory">×</button>
     </div>
+
     <div class="inventory-content">
+      <!-- Main inventory grid - 3 rows x 9 columns -->
       <div class="inventory-grid">
         <div
-          v-for="(item, index) in items"
-          :key="index"
+          v-for="index in 27"
+          :key="'inv-' + (index - 1)"
           class="inventory-slot"
-          draggable="true"
-          @dragstart="onDragStart($event, item)"
           @dragover.prevent
-          @drop="onDrop($event, index)"
-          @click="useItem(item)"
+          @drop="onDrop($event, index - 1)"
+          @click="onInventorySlotClick(getItemAtPosition('inventory', index - 1))"
         >
-          <div v-if="item" class="item-container">
-            <img
-              :src="item.iconPath || '/assets/textures/default-item.png'"
-              :alt="item.name"
-              class="item-icon"
-            />
-            <div class="item-quantity" v-if="item.stackable && item.quantity > 1">
-              {{ item.quantity }}
-            </div>
-            <div class="item-name">{{ item.name }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="inventory-hotbar">
-      <div
-        v-for="slot in hotbarSlots"
-        :key="slot.slotIndex"
-        class="hotbar-slot"
-        :class="{ active: slot.slotIndex === activeHotbarSlot }"
-        @dragover.prevent
-        @drop="onDropToHotbar($event, slot.slotIndex)"
-        @click="setActiveHotbarSlot(slot.slotIndex)"
-      >
-        <div v-if="getItemForSlot(slot)" class="item-container">
-          <img
-            :src="getItemForSlot(slot)?.iconPath || '/assets/textures/default-item.png'"
-            :alt="getItemForSlot(slot)?.name"
-            class="item-icon"
+          <InventoryItem
+            v-if="getItemAtPosition('inventory', index - 1)"
+            :item="getItemAtPosition('inventory', index - 1)"
+            :slot-id="'inv-' + (index - 1)"
+            :removable="false"
           />
-          <div
-            class="item-quantity"
-            v-if="getItemForSlot(slot)?.stackable && getItemForSlot(slot)?.quantity > 1"
-          >
-            {{ getItemForSlot(slot)?.quantity }}
-          </div>
         </div>
-        <div class="slot-number">{{ slot.slotIndex + 1 }}</div>
       </div>
     </div>
+
+    <!-- Using the Hotbar component for hotbar slots -->
+    <div class="inventory-hotbar-container">
+      <Hotbar class="inventory-hotbar" :inInventory="true" />
+    </div>
+
     <div class="inventory-instructions">
-      <p>Drag items to hotbar slots for quick access</p>
+      <p>Drag items between inventory slots and hotbar</p>
       <p>Press 1-9 keys to select hotbar slots</p>
       <p>Press I or ESC to close inventory</p>
     </div>
@@ -68,21 +43,24 @@
 import { defineComponent, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useStore } from 'vuex';
 import { IInventoryItem } from '@/models/inventory/InventoryItem';
+import Hotbar from './Hotbar.vue';
+import InventoryItem from './InventoryItem.vue';
 
 export default defineComponent({
   name: 'InventoryPanel',
 
+  components: {
+    Hotbar,
+    InventoryItem,
+  },
+
   setup() {
     const store = useStore();
-
     const isOpen = computed(() => store.getters['inventory/isInventoryOpen']);
-    const items = computed(() => store.getters['inventory/allItems']);
-    const hotbarSlots = computed(() => store.getters['hotbar/getAllSlots']);
-    const activeHotbarSlot = computed(() => store.getters['hotbar/getActiveSlot']);
 
-    const getItemForSlot = (slot: { itemId: string | null }) => {
-      if (!slot.itemId) return null;
-      return store.getters['inventory/getItemById'](slot.itemId);
+    // Get item at a specific position
+    const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
+      return store.getters['inventory/getItemAtPosition'](type, index);
     };
 
     // Add keyboard event handling
@@ -94,18 +72,18 @@ export default defineComponent({
         console.log('Closing inventory via key press');
         closeInventory();
         event.preventDefault();
-        event.stopImmediatePropagation(); // Use stopImmediatePropagation to ensure no other handlers run
+        event.stopImmediatePropagation();
         return false;
       }
     };
 
     // Add and remove event listeners
-    onMounted(() => {
-      window.addEventListener('keydown', handleKeyDown, true); // Use capture phase
+    onMounted(async () => {
+      window.addEventListener('keydown', handleKeyDown, true);
     });
 
     onBeforeUnmount(() => {
-      window.removeEventListener('keydown', handleKeyDown, true); // Use capture phase
+      window.removeEventListener('keydown', handleKeyDown, true);
     });
 
     const closeInventory = () => {
@@ -122,62 +100,62 @@ export default defineComponent({
     };
 
     const useItem = (item: IInventoryItem) => {
-      if (item.use) {
+      if (item?.use) {
         store.dispatch('inventory/useItem', item.id);
       }
     };
 
-    const setActiveHotbarSlot = (slotIndex: number) => {
-      store.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
-    };
-
-    const onDragStart = (event: DragEvent, item: IInventoryItem) => {
-      if (event.dataTransfer) {
-        event.dataTransfer.setData('itemId', item.id);
-        // Set a custom drag image if needed
-        const img = new Image();
-        img.src = item.iconPath || '/assets/textures/default-item.png';
-        event.dataTransfer.setDragImage(img, 25, 25);
-      }
-    };
-
-    const onDrop = (event: DragEvent, index: number) => {
+    const onDrop = (event: any, index: number) => {
       event.preventDefault();
       if (event.dataTransfer) {
         const itemId = event.dataTransfer.getData('itemId');
-        console.log(`Dropped item ${itemId} to inventory slot ${index}`);
-        // Here you could implement inventory slot swapping logic
+
+        if (itemId) {
+          // Move the item to the new position in the inventory
+          store.dispatch('inventory/moveItem', {
+            itemId,
+            newPosition: {
+              type: 'inventory',
+              index: index,
+            },
+          });
+        }
       }
     };
 
-    const onDropToHotbar = (event: DragEvent, slotIndex: number) => {
-      event.preventDefault();
-      if (event.dataTransfer) {
-        const itemId = event.dataTransfer.getData('itemId');
-        store.dispatch('hotbar/equipItemToSlot', { slotIndex, itemId });
+    const onInventorySlotClick = (item: IInventoryItem | null) => {
+      if (item) {
+        useItem(item);
       }
     };
 
     return {
       isOpen,
-      items,
-      hotbarSlots,
-      activeHotbarSlot,
-      getItemForSlot,
+      getItemAtPosition,
       closeInventory,
       useItem,
-      setActiveHotbarSlot,
-      onDragStart,
       onDrop,
-      onDropToHotbar,
+      onInventorySlotClick,
     };
   },
 });
 </script>
 
 <style scoped>
+.drag-preview {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.8;
+}
+
+.drag-preview img {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
 .inventory-panel {
   position: absolute;
+  user-select: none;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
@@ -186,7 +164,7 @@ export default defineComponent({
   padding: 20px;
   color: white;
   width: 80%;
-  max-width: 800px;
+  max-width: 900px;
   z-index: 1000;
   backdrop-filter: blur(10px) saturate(180%);
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
@@ -217,7 +195,8 @@ export default defineComponent({
 
 .inventory-grid {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(9, 1fr);
+  grid-template-rows: repeat(3, 1fr);
   gap: 10px;
   margin-bottom: 20px;
 }
@@ -226,7 +205,7 @@ export default defineComponent({
   background-color: rgba(60, 60, 60, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
-  height: 80px;
+  height: 70px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -239,80 +218,19 @@ export default defineComponent({
   transform: translateY(-2px);
 }
 
-.inventory-hotbar {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
+.inventory-hotbar-container {
   padding-top: 15px;
   border-top: 1px solid rgba(255, 255, 255, 0.3);
   margin-bottom: 15px;
 }
 
-.hotbar-slot {
-  background-color: rgba(60, 60, 60, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  width: 80px;
-  height: 80px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.hotbar-slot:hover {
-  background-color: rgba(80, 80, 80, 0.7);
-  transform: translateY(-2px);
-}
-
-.hotbar-slot.active {
-  border-color: rgba(255, 215, 0, 0.8);
-  box-shadow: 0 0 8px rgba(255, 215, 0, 0.7);
-}
-
-.slot-number {
-  position: absolute;
-  bottom: 5px;
-  right: 5px;
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-.item-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  padding: 5px;
-}
-
-.item-icon {
-  max-width: 80%;
-  max-height: 60%;
-  object-fit: contain;
-}
-
-.item-quantity {
-  position: absolute;
-  bottom: 5px;
-  right: 5px;
-  background-color: rgba(0, 0, 0, 0.6);
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-size: 12px;
-}
-
-.item-name {
-  font-size: 12px;
-  text-align: center;
-  margin-top: 5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 100%;
+.inventory-hotbar {
+  /* Style overrides for hotbar when displayed in inventory */
+  position: static !important;
+  transform: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
 }
 
 .inventory-instructions {

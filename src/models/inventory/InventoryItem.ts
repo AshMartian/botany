@@ -14,7 +14,7 @@ export class InventoryItem implements IInventoryItem {
   constructor(
     public id: string,
     public name: string,
-    public iconPath: string = '/assets/textures/default-item.png',
+    public iconPath: string = '/resources/graphics/textures/items/unknown.jpg',
     public stackable: boolean = false,
     public maxStackSize: number = 1,
     public quantity: number = 1,
@@ -43,6 +43,21 @@ export class InventoryItem implements IInventoryItem {
       this.quantity,
       this.description
     );
+  }
+
+  /**
+   * Serialize the item to IInventoryItem
+   */
+  public serialize(): IInventoryItem {
+    return {
+      id: this.id,
+      name: this.name,
+      iconPath: this.iconPath,
+      quantity: this.quantity,
+      stackable: this.stackable,
+      maxStackSize: this.maxStackSize,
+      description: this.description,
+    };
   }
 
   /**

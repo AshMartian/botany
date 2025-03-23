@@ -338,7 +338,7 @@ export class Store {
     this.subscribers[playerId].push(callback);
   }
 
-  private notifySubscribers(playerId: string, type: string, data: any = null) {
+  public notifySubscribers(playerId: string, type: string, data: any = null) {
     if (this.subscribers[playerId]) {
       for (const callback of this.subscribers[playerId]) {
         callback(type, data);
@@ -362,14 +362,14 @@ export class Store {
    * @param item The item to give
    * @param quantity Optional quantity
    */
-  giveItemToPlayer(playerId: string, item: IInventoryItem, quantity?: number): void {
+  async giveItemToPlayer(playerId: string, item: IInventoryItem, quantity?: number): Promise<void> {
     const player = this.getPlayer(playerId);
     if (!player.inventory) {
       player.inventory = [];
     }
 
     // Use the PlayerInventory service for consistent item handling
-    playerInventory.giveItemToPlayer(playerId, item, quantity);
+    await playerInventory.giveItemToPlayer(playerId, item, quantity);
 
     // Update the player's inventory in the store
     player.inventory = playerInventory.getPlayerItems(playerId);

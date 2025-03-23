@@ -7,7 +7,7 @@ export class Silicon extends Resource {
     name = 'Silicon',
     iconPath = '/assets/textures/silicon.png'
   ) {
-    super(id, name, iconPath, true, 999, quantity);
+    super(quantity, id, name, iconPath, true, 999);
   }
 
   public override getColor(): string {
