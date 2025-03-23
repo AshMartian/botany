@@ -436,6 +436,25 @@ export class Store {
   }
 
   /**
+   * Force refresh the inventory from IndexedDB
+   * This ensures the UI reflects the actual state after drag operations
+   * @param playerId The ID of the player
+   */
+  async refreshInventory(playerId: string): Promise<void> {
+    console.log('Force refreshing inventory for player:', playerId);
+
+    // Reload inventory from PlayerInventory service and IndexedDB
+    await playerInventory.initialize();
+
+    // Update the player's inventory in the store
+    const player = this.getPlayer(playerId);
+    player.inventory = playerInventory.getPlayerItems(playerId);
+
+    // Notify subscribers about the refresh
+    this.notifySubscribers(playerId, 'inventory', player.inventory);
+  }
+
+  /**
    * Use an item from a player's inventory
    * @param playerId The ID of the player
    * @param itemId The ID of the item

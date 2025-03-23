@@ -5,12 +5,14 @@ import { IInventoryItem } from '@/models/inventory/InventoryItem';
 import store from '@/store/store';
 import { openDB } from 'idb';
 import { playerInventory } from '@/services/PlayerInventory';
+import { generateUUID } from '@/utils/uuid';
 
 const DB_NAME = 'game-inventory';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incrementing version to handle schema changes
 const STORE_NAME = 'player-inventories';
 
 export interface InventoryItemWithPosition extends IInventoryItem {
+  stackId: string; // Unique ID for each stack in the inventory
   position: {
     type: 'inventory' | 'hotbar';
     index: number;
@@ -32,8 +34,13 @@ async function saveToIndexedDB(playerId: string, items: InventoryItemWithPositio
       },
     });
 
-    await db.put(STORE_NAME, items, playerId);
-    console.log('Saved inventory to IndexedDB:', items);
+    // Serialize items before storing
+    const serializedItems = items.map((item) => JSON.parse(JSON.stringify(item)));
+
+    console.log('Saving inventory to IndexedDB:', serializedItems);
+
+    await db.put(STORE_NAME, serializedItems, playerId);
+    console.log('Saved inventory to IndexedDB:', serializedItems);
   } catch (e) {
     console.warn('Failed to save inventory to IndexedDB:', e);
   }
@@ -42,17 +49,30 @@ async function saveToIndexedDB(playerId: string, items: InventoryItemWithPositio
 async function loadFromIndexedDB(playerId: string): Promise<InventoryItemWithPosition[]> {
   try {
     const db = await openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, newVersion) {
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME);
         }
+        // Migration logic could be added here for existing data
       },
     });
 
-    const items = await db.get(STORE_NAME, playerId);
+    const items: InventoryItemWithPosition[] = await db.get(STORE_NAME, playerId);
     if (items) {
       console.log('Loaded inventory from IndexedDB:', items);
-      return items;
+
+      // Ensure all items have stackId and valid position
+      return items.map((item: any, index: number) => {
+        const validItem: InventoryItemWithPosition = {
+          ...item,
+          stackId: item.stackId || generateUUID(),
+          position: item.position || {
+            type: 'inventory',
+            index: index % 27, // Ensure index is within inventory bounds
+          },
+        };
+        return validItem;
+      });
     }
   } catch (e) {
     console.warn('Failed to load inventory from IndexedDB:', e);
@@ -70,7 +90,15 @@ export const inventory: Module<InventoryState, RootState> = {
 
   mutations: {
     SET_ITEMS(state, items: InventoryItemWithPosition[]) {
-      state.items = items;
+      // Ensure all items have valid positions before setting them
+      state.items = items.map((item, index) => ({
+        ...item,
+        stackId: item.stackId || generateUUID(),
+        position: item.position || {
+          type: 'inventory',
+          index: index % 27,
+        },
+      }));
     },
 
     SET_INVENTORY_OPEN(state, isOpen: boolean) {
@@ -93,9 +121,13 @@ export const inventory: Module<InventoryState, RootState> = {
         return;
       }
 
-      // Add position information to the item
+      // Generate a new stack ID for this item
+      const stackId = generateUUID();
+
+      // Add position information and stackId to the item
       const itemWithPosition: InventoryItemWithPosition = {
         ...item,
+        stackId,
         position: {
           type: 'inventory',
           index: emptySlotIndex,
@@ -118,7 +150,10 @@ export const inventory: Module<InventoryState, RootState> = {
           const remaining = item.quantity - amountToAdd;
           if (remaining > 0) {
             // Create a copy with the remaining quantity
-            const newItem = { ...itemWithPosition, quantity: remaining };
+            const newItem = {
+              ...itemWithPosition,
+              quantity: remaining,
+            };
             state.items.push(newItem);
           }
         } else {
@@ -137,8 +172,8 @@ export const inventory: Module<InventoryState, RootState> = {
       }
     },
 
-    REMOVE_ITEM(state, itemId: string) {
-      state.items = state.items.filter((item) => item.id !== itemId);
+    REMOVE_ITEM(state, stackId: string) {
+      state.items = state.items.filter((item) => item.stackId !== stackId);
 
       // Save inventory state to IndexedDB
       const playerId = store.getSelfPlayerId();
@@ -147,8 +182,8 @@ export const inventory: Module<InventoryState, RootState> = {
       }
     },
 
-    UPDATE_ITEM_QUANTITY(state, { itemId, quantity }: { itemId: string; quantity: number }) {
-      const item = state.items.find((item) => item.id === itemId);
+    UPDATE_ITEM_QUANTITY(state, { stackId, quantity }: { stackId: string; quantity: number }) {
+      const item = state.items.find((item) => item.stackId === stackId);
       if (item) {
         item.quantity = Math.min(quantity, item.maxStackSize);
 
@@ -175,31 +210,99 @@ export const inventory: Module<InventoryState, RootState> = {
     MOVE_ITEM(
       state,
       {
-        itemId,
+        stackId,
         newPosition,
-      }: { itemId: string; newPosition: { type: 'inventory' | 'hotbar'; index: number } }
+      }: { stackId: string; newPosition: { type: 'inventory' | 'hotbar'; index: number } }
     ) {
-      const item = state.items.find((i) => i.id === itemId);
-      if (item) {
-        // Check if there's already an item at the target position
-        const itemAtTarget = state.items.find(
-          (i) => i.position.type === newPosition.type && i.position.index === newPosition.index
-        );
+      const sourceIndex = state.items.findIndex((i) => i.stackId === stackId);
+      if (sourceIndex === -1) return;
 
-        // If there's an item at the target, swap positions
-        if (itemAtTarget) {
-          const oldPosition = { ...item.position };
-          itemAtTarget.position = oldPosition;
+      const sourceItem = state.items[sourceIndex];
+      const targetIndex = state.items.findIndex(
+        (i) => i.position.type === newPosition.type && i.position.index === newPosition.index
+      );
+
+      // Create a new array with all items except source and target
+      const newItems = state.items.filter(
+        (_, index) => index !== sourceIndex && index !== targetIndex
+      );
+
+      if (targetIndex !== -1) {
+        const targetItem = state.items[targetIndex];
+
+        // If items are the same type and stackable
+        if (targetItem.id === sourceItem.id && sourceItem.stackable && targetItem.stackable) {
+          const totalQuantity = targetItem.quantity + sourceItem.quantity;
+
+          if (totalQuantity <= targetItem.maxStackSize) {
+            // Combine stacks
+            newItems.push({
+              ...targetItem,
+              quantity: totalQuantity,
+            });
+          } else {
+            // Fill target stack to max and keep remainder in source
+            newItems.push(
+              {
+                ...targetItem,
+                quantity: targetItem.maxStackSize,
+              },
+              {
+                ...sourceItem,
+                quantity: totalQuantity - targetItem.maxStackSize,
+                position: sourceItem.position,
+              }
+            );
+          }
+        } else {
+          // Swap positions
+          newItems.push(
+            { ...sourceItem, position: newPosition },
+            { ...targetItem, position: sourceItem.position }
+          );
         }
+      } else {
+        // Move source item to new position
+        newItems.push({ ...sourceItem, position: newPosition });
+      }
 
-        // Update the item's position
-        item.position = newPosition;
+      // Update state with new array
+      state.items = newItems;
 
-        // Save inventory state to IndexedDB
-        const playerId = store.getSelfPlayerId();
-        if (playerId) {
-          saveToIndexedDB(playerId, state.items);
-        }
+      // Save to IndexedDB
+      const playerId = store.getSelfPlayerId();
+      if (playerId) {
+        saveToIndexedDB(playerId, newItems);
+        playerInventory.syncWithStore(playerId);
+      }
+    },
+
+    ADD_SPLIT_STACK(
+      state,
+      {
+        originalItem,
+        quantity,
+        position,
+      }: {
+        originalItem: InventoryItemWithPosition;
+        quantity: number;
+        position: { type: 'inventory' | 'hotbar'; index: number };
+      }
+    ) {
+      // Create a new stack based on the original item
+      const newStack: InventoryItemWithPosition = {
+        ...originalItem,
+        stackId: generateUUID(), // Generate new unique ID for the split stack
+        quantity: quantity,
+        position: position,
+      };
+
+      state.items.push(newStack);
+
+      // Save inventory state to IndexedDB
+      const playerId = store.getSelfPlayerId();
+      if (playerId) {
+        saveToIndexedDB(playerId, state.items);
       }
     },
   },
@@ -227,16 +330,15 @@ export const inventory: Module<InventoryState, RootState> = {
 
         // Add each legacy item and assign inventory positions
         if (legacyItems && legacyItems.length > 0) {
-          legacyItems.forEach((item, index) => {
-            const itemWithPosition: InventoryItemWithPosition = {
-              ...item,
-              position: {
-                type: 'inventory',
-                index,
-              },
-            };
-            commit('ADD_ITEM', itemWithPosition);
-          });
+          const itemsWithPositions = legacyItems.map((item, index) => ({
+            ...item,
+            stackId: generateUUID(),
+            position: {
+              type: 'inventory' as const,
+              index: index % 27,
+            },
+          }));
+          commit('SET_ITEMS', itemsWithPositions);
         }
       }
     },
@@ -245,11 +347,11 @@ export const inventory: Module<InventoryState, RootState> = {
       commit('ADD_ITEM', item);
     },
 
-    removeItem({ commit }, itemId: string) {
-      commit('REMOVE_ITEM', itemId);
+    removeItem({ commit }, stackId: string) {
+      commit('REMOVE_ITEM', stackId);
     },
 
-    updateItemQuantity({ commit }, payload: { itemId: string; quantity: number }) {
+    updateItemQuantity({ commit }, payload: { stackId: string; quantity: number }) {
       commit('UPDATE_ITEM_QUANTITY', payload);
     },
 
@@ -257,15 +359,15 @@ export const inventory: Module<InventoryState, RootState> = {
       commit('TOGGLE_INVENTORY');
     },
 
-    useItem({ state, commit }, itemId: string) {
-      const item = state.items.find((item) => item.id === itemId);
+    useItem({ state, commit }, stackId: string) {
+      const item = state.items.find((item) => item.stackId === stackId);
       if (item && item.use) {
         item.use();
 
         // If the item is consumed on use, reduce its quantity by 1
         if (item.stackable) {
           commit('UPDATE_ITEM_QUANTITY', {
-            itemId: item.id,
+            stackId: item.stackId,
             quantity: item.quantity - 1,
           });
         }
@@ -273,20 +375,63 @@ export const inventory: Module<InventoryState, RootState> = {
     },
 
     moveItem(
-      { commit },
-      payload: { itemId: string; newPosition: { type: 'inventory' | 'hotbar'; index: number } }
+      { commit, dispatch },
+      payload: { stackId: string; newPosition: { type: 'inventory' | 'hotbar'; index: number } }
     ) {
+      // First perform the move operation
       commit('MOVE_ITEM', payload);
+
+      // Then force a refresh to ensure UI is synchronized
+      setTimeout(() => {
+        dispatch('forceRefreshInventory');
+      }, 10);
+    },
+
+    addSplitStack(
+      { commit },
+      payload: {
+        originalItem: InventoryItemWithPosition;
+        quantity: number;
+        position: { type: 'inventory' | 'hotbar'; index: number };
+      }
+    ) {
+      commit('ADD_SPLIT_STACK', payload);
+    },
+
+    // Add new action to force refresh inventory data
+    async forceRefreshInventory({ commit }) {
+      const playerId = store.getSelfPlayerId();
+      if (!playerId) {
+        console.error('Player ID not found. Cannot refresh inventory.');
+        return;
+      }
+
+      console.log('Forcing inventory refresh from IndexedDB');
+
+      // Force refresh from root store first
+      await store.refreshInventory(playerId);
+
+      // Then load fresh data into Vuex store
+      const items = await loadFromIndexedDB(playerId);
+      if (items && items.length > 0) {
+        commit('SET_ITEMS', items);
+      }
     },
   },
 
   getters: {
     allItems: (state) => state.items,
+    getItemByStackId: (state) => (stackId: string) =>
+      state.items.find((item) => item.stackId === stackId),
     getItemById: (state) => (id: string) => state.items.find((item) => item.id === id),
     isInventoryOpen: (state) => state.isInventoryOpen,
-    getInventoryItems: (state) => state.items.filter((item) => item.position.type === 'inventory'),
-    getHotbarItems: (state) => state.items.filter((item) => item.position.type === 'hotbar'),
+    getInventoryItems: (state) =>
+      state.items.filter((item) => item.position && item.position.type === 'inventory'),
+    getHotbarItems: (state) =>
+      state.items.filter((item) => item.position && item.position.type === 'hotbar'),
     getItemAtPosition: (state) => (type: 'inventory' | 'hotbar', index: number) =>
-      state.items.find((item) => item.position.type === type && item.position.index === index),
+      state.items.find(
+        (item) => item.position && item.position.type === type && item.position.index === index
+      ),
   },
 };

@@ -5,7 +5,7 @@
       :key="'hotbar-' + (slotIndex - 1)"
       class="hotbar-slot"
       :class="{ active: slotIndex - 1 === activeSlot }"
-      @click="selectSlot(slotIndex - 1)"
+      @click="selectSlot(slotIndex - 1, $event)"
       @dragover.prevent
       @drop="onDropToHotbar($event, slotIndex - 1)"
     >
@@ -48,54 +48,97 @@ export default defineComponent({
     const store = useStore();
     const activeSlot = computed(() => store.getters['hotbar/getActiveSlot']);
 
+    // Fix: Don't create a function that returns a static value
     const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
       return store.getters['inventory/getItemAtPosition'](type, index);
     };
 
-    const selectSlot = (slotIndex: number) => {
-      store.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
-    };
-
-    const onDropToHotbar = (event: any, slotIndex: number) => {
-      event.preventDefault();
-      if (event.dataTransfer) {
-        const itemId = event.dataTransfer.getData('itemId');
-
-        if (itemId) {
-          // Move the item to the hotbar position
-          store.dispatch('inventory/moveItem', {
-            itemId,
-            newPosition: {
-              type: 'hotbar',
-              index: slotIndex,
-            },
-          });
-        }
-      }
-    };
-
-    const removeItemFromSlot = (slotIndex: number) => {
-      // Find the item at this hotbar position
+    const selectSlot = (slotIndex: number, event: MouseEvent) => {
+      // Handle shift-click for stack splitting
       const item = getItemAtPosition('hotbar', slotIndex);
-      if (item) {
-        // Find an empty inventory slot
+      if (event.shiftKey && item?.stackable && item.quantity > 1) {
+        const newQuantity = Math.floor(item.quantity / 2);
+        const remainingQuantity = item.quantity - newQuantity;
+
+        // Find first empty inventory slot
         let emptySlotIndex = 0;
         while (getItemAtPosition('inventory', emptySlotIndex) && emptySlotIndex < 27) {
           emptySlotIndex++;
         }
 
         if (emptySlotIndex < 27) {
-          // Move the item to the inventory
-          store.dispatch('inventory/moveItem', {
-            itemId: item.id,
-            newPosition: {
+          // Update original stack quantity
+          store.dispatch('inventory/updateItemQuantity', {
+            stackId: item.stackId,
+            quantity: remainingQuantity,
+          });
+
+          // Create new stack with split quantity
+          store.dispatch('inventory/addSplitStack', {
+            originalItem: item,
+            quantity: newQuantity,
+            position: {
               type: 'inventory',
               index: emptySlotIndex,
             },
           });
         } else {
-          console.warn('Inventory is full, item cannot be moved from hotbar');
+          console.warn('No empty slots available for split stack');
         }
+        return;
+      }
+
+      // Regular slot selection
+      store.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
+    };
+
+    const onDropToHotbar = async (event: DragEvent, slotIndex: number) => {
+      if (!event.dataTransfer) return;
+
+      const stackId = event.dataTransfer.getData('stackId');
+      if (!stackId) {
+        console.warn('No stackId found in drag data');
+        return;
+      }
+
+      try {
+        // Move the item to the hotbar position
+        await store.dispatch('inventory/moveItem', {
+          stackId,
+          newPosition: {
+            type: 'hotbar',
+            index: slotIndex,
+          },
+        });
+      } catch (error) {
+        console.error('Error moving item to hotbar:', error);
+        // If there was an error, force a refresh anyway
+        store.dispatch('inventory/forceRefreshInventory');
+      }
+    };
+
+    const removeItemFromSlot = (slotIndex: number) => {
+      // Find the item at this hotbar position
+      const item = getItemAtPosition('hotbar', slotIndex);
+      if (!item?.stackId) return;
+
+      // Find an empty inventory slot
+      let emptySlotIndex = 0;
+      while (getItemAtPosition('inventory', emptySlotIndex) && emptySlotIndex < 27) {
+        emptySlotIndex++;
+      }
+
+      if (emptySlotIndex < 27) {
+        // Move the item to the inventory
+        store.dispatch('inventory/moveItem', {
+          stackId: item.stackId,
+          newPosition: {
+            type: 'inventory',
+            index: emptySlotIndex,
+          },
+        });
+      } else {
+        console.warn('Inventory is full, item cannot be moved from hotbar');
       }
     };
 

@@ -6,14 +6,14 @@
     @dragstart="onDragStart"
   >
     <img
-      :src="item?.iconPath || '/assets/textures/default-item.png'"
-      :alt="item?.name"
+      :src="itemDisplay?.iconPath || '/assets/textures/default-item.png'"
+      :alt="itemDisplay?.name"
       class="item-icon"
     />
-    <div class="item-quantity" v-if="item?.stackable && item?.quantity > 1">
-      {{ item?.quantity }}
+    <div class="item-quantity" v-if="itemDisplay?.stackable && itemDisplay?.quantity > 1">
+      {{ itemDisplay?.quantity }}
     </div>
-    <div class="item-tooltip">{{ item?.name }}</div>
+    <div class="item-tooltip">{{ itemDisplay?.name }}</div>
 
     <button v-if="removable" class="remove-item" @click.stop="$emit('remove')" title="Remove item">
       ×
@@ -23,15 +23,20 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, PropType } from 'vue';
+import { defineComponent, PropType, computed } from 'vue';
 import { IInventoryItem } from '@/models/inventory/InventoryItem';
+
+// Extended interface to include stackId - for component props typing only
+interface InventoryItemWithStackId extends IInventoryItem {
+  stackId?: string;
+}
 
 export default defineComponent({
   name: 'InventoryItem',
 
   props: {
     item: {
-      type: Object as PropType<IInventoryItem | null>,
+      type: Object as PropType<InventoryItemWithStackId | null>,
       default: null,
     },
     slotNumber: {
@@ -59,36 +64,30 @@ export default defineComponent({
   emits: ['remove', 'click', 'dragstart'],
 
   setup(props, { emit }) {
+    // Use computed to track item changes
+    const itemDisplay = computed(() => props.item);
+
     const onDragStart = (event: DragEvent) => {
-      if (!props.item || !event.dataTransfer) return;
+      if (!props.item || !event.dataTransfer || !props.item.stackId) {
+        return;
+      }
+
+      // Prevent default drag image
+      if (event.dataTransfer.setDragImage) {
+        const emptyImg = document.createElement('img');
+        event.dataTransfer.setDragImage(emptyImg, 0, 0);
+      }
 
       // Set the drag data
-      event.dataTransfer.setData('itemId', props.item.id);
+      event.dataTransfer.setData('stackId', props.item.stackId);
       event.dataTransfer.setData('sourceSlotId', props.slotId?.toString() || '');
-
-      // Create custom drag image
-      const dragImage = document.createElement('div');
-      dragImage.className = 'drag-preview';
-      const img = document.createElement('img');
-      img.src = props.item.iconPath || '/assets/textures/default-item.png';
-      img.style.width = '40px';
-      img.style.height = '40px';
-      dragImage.appendChild(img);
-
-      // Add to document temporarily
-      document.body.appendChild(dragImage);
-      event.dataTransfer.setDragImage(dragImage, 20, 20);
-
-      // Remove after drag starts
-      setTimeout(() => {
-        document.body.removeChild(dragImage);
-      }, 0);
 
       emit('dragstart', { event, item: props.item });
     };
 
     return {
       onDragStart,
+      itemDisplay,
     };
   },
 });
@@ -104,19 +103,20 @@ export default defineComponent({
   padding: 5px;
   position: relative;
   border-radius: 5px;
-  overflow: hidden;
 }
 
 .item-icon {
-  max-width: 100%;
-  max-height: 100%;
+  min-width: 100%;
+  min-height: 100%;
   object-fit: contain;
+  border-radius: 5px;
+  overflow: hidden;
 }
 
 .item-quantity {
   position: absolute;
-  bottom: 5px;
-  right: 5px;
+  top: 5px;
+  left: 5px;
   background-color: rgba(0, 0, 0, 0.6);
   padding: 2px 4px;
   border-radius: 3px;
@@ -147,8 +147,8 @@ export default defineComponent({
 
 .slot-number {
   position: absolute;
-  bottom: 3px;
-  left: 3px;
+  bottom: 4px;
+  left: 5px;
   font-size: 10px;
   opacity: 0.7;
   color: white;
@@ -183,5 +183,10 @@ export default defineComponent({
 /* Specific styling for hotbar items */
 .hotbar-item {
   max-width: 100%;
+}
+
+/* Remove the drag-preview style since we're handling it in JS */
+.drag-preview {
+  display: none;
 }
 </style>

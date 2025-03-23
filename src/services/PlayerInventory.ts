@@ -2,16 +2,36 @@
 import { openDB } from 'idb';
 import store from '../store/store';
 import storeVuex from '@/store/vuex';
-import { IInventoryItem, InventoryItem } from '@/models/inventory/InventoryItem';
+import { IInventoryItem } from '@/models/inventory/InventoryItem';
 import * as items from '@/models/inventory/items';
+import { generateUUID } from '@/utils/uuid';
 
 const DB_NAME = 'game-inventory';
 const DB_VERSION = 2;
 const STORE_NAME = 'player-inventories';
 
+// Minimal interface for stored item data
+interface StoredInventoryItem {
+  id: string;
+  stackId: string;
+  quantity: number;
+  position: {
+    type: 'inventory' | 'hotbar';
+    index: number;
+  };
+}
+
+interface InventoryItemWithPosition extends IInventoryItem {
+  stackId: string;
+  position: {
+    type: 'inventory' | 'hotbar';
+    index: number;
+  };
+}
+
 // Player inventory tracking - will be integrated with the Store
 export interface PlayerItems {
-  [playerId: string]: IInventoryItem[];
+  [playerId: string]: InventoryItemWithPosition[];
 }
 
 /**
@@ -27,7 +47,7 @@ class PlayerInventoryService {
     this.maxInventorySize = 100;
   }
 
-  public async initialize(): Promise<IInventoryItem[]> {
+  public async initialize(): Promise<InventoryItemWithPosition[]> {
     const playerId = store.getSelfPlayerId();
     if (playerId) {
       const items = await this.loadFromIndexedDB(playerId);
@@ -49,27 +69,36 @@ class PlayerInventoryService {
 
   private async saveToIndexedDB(playerId: string) {
     const db = await this.initializeDB();
-    const itemsToStore = this.playerItems[playerId].map((item) => ({
+    // Only store minimal data in IndexedDB
+    const itemsToStore: StoredInventoryItem[] = this.playerItems[playerId].map((item) => ({
       id: item.id,
+      stackId: item.stackId,
       quantity: item.quantity,
+      position: item.position,
     }));
     await db.put(STORE_NAME, itemsToStore, playerId);
   }
 
   private async loadFromIndexedDB(playerId: string) {
-    console.log('Loading inventory from IndexedDB for player:', playerId);
     const db = await this.initializeDB();
-    const storedItems = await db.get(STORE_NAME, playerId);
-    console.log('Loaded items from IndexedDB:', storedItems);
+    const storedItems: StoredInventoryItem[] = await db.get(STORE_NAME, playerId);
 
     // Initialize empty array if no items found
     this.playerItems[playerId] = [];
 
     if (storedItems) {
+      // Reconstruct full items from stored data
       for (const storedItem of storedItems) {
         const item = this.createItemFromId(storedItem.id, storedItem.quantity);
+
+        // Look up the item class based on the stored ID
+        // Create an instance of the item
         if (item) {
-          this.playerItems[playerId].push(item);
+          this.playerItems[playerId].push({
+            ...item,
+            stackId: storedItem.stackId,
+            position: storedItem.position,
+          });
         }
       }
     }
@@ -108,8 +137,19 @@ class PlayerInventoryService {
     item: IInventoryItem,
     quantity?: number
   ): Promise<void> {
+    if (!this.playerItems[playerId]) {
+      this.playerItems[playerId] = [];
+    }
+
     // Clone the item to avoid reference issues
-    const itemToAdd = this.cloneItem(item);
+    const itemToAdd: InventoryItemWithPosition = {
+      ...this.cloneItem(item),
+      stackId: generateUUID(),
+      position: {
+        type: 'inventory',
+        index: this.playerItems[playerId].length % 27,
+      },
+    };
 
     // Override quantity if specified
     if (quantity !== undefined) {
@@ -133,8 +173,7 @@ class PlayerInventoryService {
         // If there's leftover quantity, create a new stack
         const remaining = itemToAdd.quantity - amountToAdd;
         if (remaining > 0) {
-          const newItem = this.cloneItem(itemToAdd);
-          newItem.quantity = remaining;
+          const newItem = { ...itemToAdd, quantity: remaining };
           this.playerItems[playerId].push(newItem);
         }
       } else {
@@ -157,13 +196,13 @@ class PlayerInventoryService {
    * Get all items for a specific player
    * @param playerId The unique ID of the player
    */
-  public getPlayerItems(playerId: string): IInventoryItem[] {
+  public getPlayerItems(playerId: string): InventoryItemWithPosition[] {
     // Ensure player has an inventory
     if (!this.playerItems[playerId]) {
       this.playerItems[playerId] = [];
       this.loadFromIndexedDB(playerId);
     }
-    return this.playerItems[playerId] || [];
+    return this.playerItems[playerId];
   }
 
   /**
@@ -231,18 +270,18 @@ class PlayerInventoryService {
   }
 
   private notifyInventoryUpdate(playerId: string): void {
-    console.log(`Inventory updated for player ${playerId}`);
+    // console.log(`Inventory updated for player ${playerId}`);
 
-    // Get the updated items
-    const items = this.playerItems[playerId] || [];
+    // Get a fresh copy of the items to ensure reactivity
+    const items = [...(this.playerItems[playerId] || [])].map((item) => ({ ...item }));
 
-    // Update Vuex store
+    // Update Vuex store with new reference
     storeVuex.commit('inventory/SET_ITEMS', items);
 
-    // Update custom Store
+    // Update custom Store with new reference
     const player = store.getPlayer(playerId);
     if (player) {
-      player.inventory = [...items];
+      player.inventory = items;
       store.notifySubscribers(playerId, 'inventory', items);
     }
   }
@@ -251,16 +290,16 @@ class PlayerInventoryService {
   public syncWithStore(playerId: string): void {
     if (!playerId) return;
 
-    // Get current items for the player
-    const items = this.playerItems[playerId] || [];
+    // Get a fresh copy of the items to ensure reactivity
+    const items = [...(this.playerItems[playerId] || [])].map((item) => ({ ...item }));
 
-    // Update Vuex store
+    // Update Vuex store with new reference
     storeVuex.commit('inventory/SET_ITEMS', items);
 
-    // Update custom Store
+    // Update custom Store with new reference
     const player = store.getPlayer(playerId);
     if (player) {
-      player.inventory = [...items];
+      player.inventory = items;
       store.notifySubscribers(playerId, 'inventory', items);
     }
   }

@@ -14,7 +14,7 @@
           class="inventory-slot"
           @dragover.prevent
           @drop="onDrop($event, index - 1)"
-          @click="onInventorySlotClick(getItemAtPosition('inventory', index - 1))"
+          @click="onInventorySlotClick(getItemAtPosition('inventory', index - 1), $event)"
         >
           <InventoryItem
             v-if="getItemAtPosition('inventory', index - 1)"
@@ -57,8 +57,9 @@ export default defineComponent({
   setup() {
     const store = useStore();
     const isOpen = computed(() => store.getters['inventory/isInventoryOpen']);
+    // Create a reactive reference for the inventory items
+    const inventoryItems = computed(() => store.getters['inventory/getInventoryItems']);
 
-    // Get item at a specific position
     const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
       return store.getters['inventory/getItemAtPosition'](type, index);
     };
@@ -99,33 +100,83 @@ export default defineComponent({
       store.commit('inventory/SET_INVENTORY_OPEN', false);
     };
 
-    const useItem = (item: IInventoryItem) => {
-      if (item?.use) {
-        store.dispatch('inventory/useItem', item.id);
+    const useItem = (item: IInventoryItem & { stackId?: string }) => {
+      if (item?.use && item.stackId) {
+        store.dispatch('inventory/useItem', item.stackId);
       }
     };
 
-    const onDrop = (event: any, index: number) => {
+    const onDrop = async (event: DragEvent, index: number) => {
       event.preventDefault();
-      if (event.dataTransfer) {
-        const itemId = event.dataTransfer.getData('itemId');
+      if (!event.dataTransfer) return;
 
-        if (itemId) {
-          // Move the item to the new position in the inventory
-          store.dispatch('inventory/moveItem', {
-            itemId,
-            newPosition: {
+      const stackId = event.dataTransfer.getData('stackId');
+      if (!stackId) {
+        console.warn('No stackId found in drag data');
+        return;
+      }
+
+      try {
+        // Move the item to the new position in the inventory
+        await store.dispatch('inventory/moveItem', {
+          stackId,
+          newPosition: {
+            type: 'inventory',
+            index: index,
+          },
+        });
+      } catch (error) {
+        console.error('Error moving item:', error);
+        // If there was an error, force a refresh anyway
+        store.dispatch('inventory/forceRefreshInventory');
+      }
+    };
+
+    const onInventorySlotClick = (
+      item: (IInventoryItem & { stackId?: string }) | null,
+      event: MouseEvent
+    ) => {
+      if (!item) return;
+      // console.log('Item clicked:', item, event);
+      // Handle shift-click for stack splitting
+      if ((event.shiftKey || event.ctrlKey) && item.stackable && item.quantity > 1) {
+        // Split the stack
+        // For shift-click, split the stack in half
+        // For ctrl-click, split the stack into 1
+        const newQuantity = event.shiftKey ? Math.floor(item.quantity / 2) : 1;
+        const remainingQuantity = item.quantity - newQuantity;
+
+        // Find first empty inventory slot
+        let emptySlotIndex = 0;
+        while (getItemAtPosition('inventory', emptySlotIndex) && emptySlotIndex < 27) {
+          emptySlotIndex++;
+        }
+
+        if (emptySlotIndex < 27) {
+          // Update original stack quantity
+          store.dispatch('inventory/updateItemQuantity', {
+            stackId: item.stackId,
+            quantity: remainingQuantity,
+          });
+
+          // Create new stack with split quantity
+          store.dispatch('inventory/addSplitStack', {
+            originalItem: item,
+            quantity: newQuantity,
+            position: {
               type: 'inventory',
-              index: index,
+              index: emptySlotIndex,
             },
           });
+        } else {
+          console.warn('No empty slots available for split stack');
         }
+        return;
       }
-    };
 
-    const onInventorySlotClick = (item: IInventoryItem | null) => {
-      if (item) {
-        useItem(item);
+      // Regular item use if not splitting
+      if (item.use && item.stackId) {
+        store.dispatch('inventory/useItem', item.stackId);
       }
     };
 
@@ -151,6 +202,9 @@ export default defineComponent({
 
 .drag-preview img {
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(5px);
+  overflow: hidden;
+  border-radius: 6px;
 }
 
 .inventory-panel {
@@ -206,11 +260,17 @@ export default defineComponent({
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
   height: 70px;
+  width: 70px;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  /* Added hover effect for inventory slots */
+  &:hover {
+    background-color: rgba(80, 80, 80, 0.7);
+    transform: translateY(-2px);
+  }
 }
 
 .inventory-slot:hover {
