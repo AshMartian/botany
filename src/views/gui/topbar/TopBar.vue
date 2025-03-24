@@ -26,29 +26,24 @@
 
 <script>
 import { Settings } from '@/models/storage/Settings';
+import { useAppStore } from '@/stores/appStore';
+
 export default {
   mounted() {
     this.showFps = Settings.getValueByName('show_fps');
-
-    this.$store.subscribe((mutation) => {
-      if (mutation.type === 'SET_SETTING_FIELD_VALUE') {
-        if (mutation.payload.name === 'show_fps') {
-          this.showFps = mutation.payload.value;
-        }
-      }
-    });
+    // this.$store.subscribe((mutation) => {
+    //   if (mutation.type === 'SET_SETTING_FIELD_VALUE') {
+    //     if (mutation.payload.name === 'show_fps') {
+    //       this.showFps = mutation.payload.value;
+    //     }
+    //   }
+    // });
   },
   methods: {
     openMenu() {
-      this.$store.commit('SET_OPEN_MENU', true);
-    },
-    backToSavepoint() {
-      this.$store.commit('SET_BACK_TO_SAVEPOINT');
-    },
-  },
-  computed: {
-    savepointId() {
-      return this.$store.state.level.savepointId;
+      const appStore = useAppStore();
+
+      appStore.setMenuOpen(true);
     },
   },
   data: function () {

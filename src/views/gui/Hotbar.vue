@@ -29,9 +29,10 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, computed } from 'vue';
-import { useStore } from 'vuex';
+import { defineComponent, computed, ref } from 'vue';
 import InventoryItem from './InventoryItem.vue';
+import { useInventoryStore } from '@/stores/inventoryStore';
+import { usePlayerStore } from '@/stores/playerStore';
 
 export default defineComponent({
   name: 'GameHotbar',
@@ -49,12 +50,19 @@ export default defineComponent({
   },
 
   setup() {
-    const store = useStore();
-    const activeSlot = computed(() => store.getters['hotbar/getActiveSlot']);
+    // Use Pinia stores
+    const inventoryStore = useInventoryStore();
+    const playerStore = usePlayerStore();
 
-    // Fix: Don't create a function that returns a static value
+    // Get player ID from player store
+    const playerId = computed(() => playerStore.currentPlayerId || 'default');
+
+    // Use a ref for the active slot since we don't have a Pinia store for hotbar yet
+    const activeSlot = ref(0);
+
+    // Get item at position using the store getter
     const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
-      return store.getters['inventory/getItemAtPosition'](type, index);
+      return inventoryStore.getItemAtPosition(type, index);
     };
 
     const selectSlot = (slotIndex: number, event: MouseEvent) => {
@@ -62,6 +70,7 @@ export default defineComponent({
       const item = getItemAtPosition('hotbar', slotIndex);
       if ((event.shiftKey || event.ctrlKey) && item?.stackable && item.quantity > 1) {
         // Split the stack
+        if (!playerId.value) return;
 
         const newQuantity = event.shiftKey ? Math.floor(item.quantity / 2) : 1;
         const remainingQuantity = item.quantity - newQuantity;
@@ -74,19 +83,12 @@ export default defineComponent({
 
         if (emptySlotIndex < 27) {
           // Update original stack quantity
-          store.dispatch('inventory/updateItemQuantity', {
-            stackId: item.stackId,
-            quantity: remainingQuantity,
-          });
+          inventoryStore.updateItemQuantity(playerId.value, item.stackId, remainingQuantity);
 
           // Create new stack with split quantity
-          store.dispatch('inventory/addSplitStack', {
-            originalItem: item,
-            quantity: newQuantity,
-            position: {
-              type: 'inventory',
-              index: emptySlotIndex,
-            },
+          inventoryStore.addSplitStack(playerId.value, item, newQuantity, {
+            type: 'inventory',
+            index: emptySlotIndex,
           });
         } else {
           console.warn('No empty slots available for split stack');
@@ -95,11 +97,11 @@ export default defineComponent({
       }
 
       // Regular slot selection
-      store.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
+      activeSlot.value = slotIndex;
     };
 
     const onDropToHotbar = async (event: DragEvent, slotIndex: number) => {
-      if (!event.dataTransfer) return;
+      if (!event.dataTransfer || !playerId.value) return;
 
       const stackId = event.dataTransfer.getData('stackId');
       if (!stackId) {
@@ -108,25 +110,24 @@ export default defineComponent({
       }
 
       try {
-        // Move the item to the hotbar position
-        await store.dispatch('inventory/moveItem', {
-          stackId,
-          newPosition: {
-            type: 'hotbar',
-            index: slotIndex,
-          },
+        // Move the item to the hotbar position using Pinia action
+        await inventoryStore.moveItem(playerId.value, stackId, {
+          type: 'hotbar',
+          index: slotIndex,
         });
       } catch (error) {
         console.error('Error moving item to hotbar:', error);
         // If there was an error, force a refresh anyway
-        store.dispatch('inventory/forceRefreshInventory');
+        if (playerId.value) {
+          await inventoryStore.forceRefreshInventory(playerId.value);
+        }
       }
     };
 
-    const removeItemFromSlot = (slotIndex: number) => {
+    const removeItemFromSlot = async (slotIndex: number) => {
       // Find the item at this hotbar position
       const item = getItemAtPosition('hotbar', slotIndex);
-      if (!item?.stackId) return;
+      if (!item?.stackId || !playerId.value) return;
 
       // Find an empty inventory slot
       let emptySlotIndex = 0;
@@ -135,13 +136,10 @@ export default defineComponent({
       }
 
       if (emptySlotIndex < 27) {
-        // Move the item to the inventory
-        store.dispatch('inventory/moveItem', {
-          stackId: item.stackId,
-          newPosition: {
-            type: 'inventory',
-            index: emptySlotIndex,
-          },
+        // Move the item to the inventory using Pinia action
+        await inventoryStore.moveItem(playerId.value, item.stackId, {
+          type: 'inventory',
+          index: emptySlotIndex,
         });
       } else {
         console.warn('Inventory is full, item cannot be moved from hotbar');

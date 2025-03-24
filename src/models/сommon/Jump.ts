@@ -1,9 +1,8 @@
 import { AbstractMesh, Mesh, Nullable, Observer, Scalar, Scene, Vector3 } from '@babylonjs/core';
-import { Forward, Player } from '@/store/types';
-import store from '@/store/store';
+import { usePlayerStore, Forward, Player } from '@/stores/playerStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { Helpers } from '@/models/Helpers';
 import RayCastHead from '@/models/сommon/rayCast/RayCastHead';
-import JumpPad from '@/models/mehanics/JumpPad';
 
 export default class Jump {
   meshFoot: Mesh;
@@ -19,11 +18,13 @@ export default class Jump {
   nextStep: Vector3;
   rayCast: RayCastHead;
   lastJumpTime: number;
+  playerStore = usePlayerStore();
+  settingsStore = useSettingsStore();
 
   constructor(playerId: string) {
     this.meshFoot = globalThis.scene.getMeshById('playerFoot_' + playerId) as Mesh;
     this.meshHead = globalThis.scene.getMeshById('playerHead_' + playerId) as Mesh;
-    this.player = store.getPlayer(playerId);
+    this.player = this.playerStore.getPlayer(playerId)!;
     this.lastForward = { ...this.player.move.forward };
     this.jumpRunning = false;
     this.inertiaRunning = false;
@@ -34,8 +35,6 @@ export default class Jump {
     this.rayCast = new RayCastHead(this.meshFoot);
     this.lastJumpTime = 0;
 
-    new JumpPad(this);
-
     this.subscribe();
 
     this.observerBefore = globalThis.scene.onAfterRenderObservable.add(() => {
@@ -44,7 +43,7 @@ export default class Jump {
   }
 
   subscribe() {
-    store.subscribe(this.player.id, (type: string, value: boolean) => {
+    this.playerStore.subscribe(this.player.id, (type: string, value: boolean) => {
       const currentTime = new Date().getTime();
 
       if (type === 'jump' && value) {
@@ -54,23 +53,22 @@ export default class Jump {
           currentTime - this.lastJumpTime > 400
         ) {
           this.lastJumpTime = currentTime;
-          let jumpHeight = store.getSettings().jumpHeight;
+          let jumpHeight = this.settingsStore.getSettings.jumpHeight;
 
           if (this.player.points) {
-            jumpHeight = store.getSettings().jumpHeightSprint;
+            jumpHeight = this.settingsStore.getSettings.jumpHeightSprint;
           }
 
-          store.setJumpStart(this.player.id);
+          this.playerStore.setJumpStart(this.player.id);
           this.jumpEnable(jumpHeight);
         }
       }
     });
-
-    store.subscribe(this.player.id, (type: string, value: any) => {
+    this.playerStore.subscribe(this.player.id, (type: string, value: boolean) => {
       if (type === 'isFlying' && value === false) {
         this.inertiaRunning = false;
         this.jumpRunning = false;
-        store.setJumpRunning(this.player.id, false);
+        this.playerStore.setJumpRunning(this.player.id, false);
       }
     });
   }
@@ -95,7 +93,7 @@ export default class Jump {
     this.inertiaRunning = true;
 
     // Update global state
-    store.setJumpRunning(this.player.id, true);
+    this.playerStore.setJumpRunning(this.player.id, true);
   }
 
   private jumpRun() {
@@ -126,7 +124,7 @@ export default class Jump {
       } else {
         // Jump has reached its peak or exceeded target height
         this.jumpRunning = false;
-        store.setJumpRunning(this.player.id, false);
+        this.playerStore.setJumpRunning(this.player.id, false);
       }
     }
   }
@@ -174,7 +172,7 @@ export default class Jump {
     if (point) {
       // Ceiling hit detected - abort jump immediately
       this.jumpRunning = false;
-      store.setJumpRunning(this.player.id, false);
+      this.playerStore.setJumpRunning(this.player.id, false);
 
       // Apply a small downward force to prevent sticking
       this.nextStep.y = -0.01;

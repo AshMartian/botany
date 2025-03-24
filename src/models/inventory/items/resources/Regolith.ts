@@ -1,4 +1,4 @@
-import { Resource, InventoryItemDefinition } from '@/models/inventory';
+import { Resource, InventoryItemDefinition, ResourceRarity } from '@/models/inventory';
 
 export class Regolith extends Resource implements InventoryItemDefinition {
   constructor(quantity = 1) {
@@ -23,5 +23,9 @@ export class Regolith extends Resource implements InventoryItemDefinition {
 
   public getResourceType(): string {
     return 'Mineral';
+  }
+
+  public getRarity(): ResourceRarity {
+    return ResourceRarity.Common; // Regolith is a common resource
   }
 }

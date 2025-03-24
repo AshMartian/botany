@@ -1,7 +1,5 @@
-import { Vector3, Scene as BabylonScene } from '@babylonjs/core';
-import SharedPlayerState from '@/models/player/SharedPlayerState';
-import WorldManager from './WorldManager';
-import store from '@/store/store';
+import { Scene as BabylonScene } from '@babylonjs/core';
+import SharedPlayerState from '@/models/playerOnline/SharedPlayerState';
 import { AdvancedDynamicTexture, Image, Control, Rectangle, TextBlock, Grid } from '@babylonjs/gui';
 
 export default class MiniMap {
@@ -105,21 +103,6 @@ export default class MiniMap {
     const virtualPos = playerState.getVirtualPosition();
 
     if (!virtualPos) return;
-
-    // Validate position is accurate when in debug mode
-    if (window.terrainManager?.debugMode) {
-      const playerMesh = this.scene.getMeshByName('playerFoot_' + (store.getPlayerId() || ''));
-      if (playerMesh) {
-        const globalPosFromMesh = WorldManager.toGlobal(playerMesh.position);
-        const diff = Vector3.Distance(globalPosFromMesh, virtualPos);
-
-        if (diff > 5) {
-          console.warn(`MiniMap position differs from actual position by ${diff.toFixed(2)} units:
-            MiniMap: ${virtualPos.toString()}
-            Actual: ${globalPosFromMesh.toString()}`);
-        }
-      }
-    }
 
     // Calculate which chunk the player is in
     const chunkSize = 128;

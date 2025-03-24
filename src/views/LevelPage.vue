@@ -74,11 +74,11 @@ import Game from '@/models/Game';
 import TopBar from '@/views/gui/topbar/TopBar.vue';
 import MenuLevel from '@/views/gui/MenuLevel.vue';
 import Settings from '@/views/gui/Settings.vue';
-import { mapGetters } from 'vuex';
 import MobileJoystick from '@/views/gui/MobileJoystick.vue';
 import Hotbar from '@/views/gui/Hotbar.vue';
 import Inventory from '@/views/gui/Inventory.vue';
 import Crosshair from '@/views/gui/Crosshair.vue';
+import { useAppStore } from '@/stores/appStore';
 
 export default defineComponent({
   name: 'game-level',
@@ -89,19 +89,19 @@ export default defineComponent({
     });
   },
   computed: {
-    ...mapGetters(['finish']),
     isMobile() {
-      return this.$store.state.isMobile;
+      const appStore = useAppStore();
+      return appStore.isMobile;
     },
     isLoading() {
-      return this.$store.state.level?.loading ?? false;
+      return false;
     },
   },
   watch: {
     finish(value) {
       if (value) {
-        // this.$store.commit('SET_PAGE', 'FinishPage');
-        this.$store.commit('SET_PLAY');
+        const appStore = useAppStore();
+        appStore.setPage('MainPage');
       }
     },
   },

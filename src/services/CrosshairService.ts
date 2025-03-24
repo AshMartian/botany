@@ -1,6 +1,6 @@
 // src/services/CrosshairService.ts
 import { Scene, PickingInfo, Observer, Nullable } from '@babylonjs/core';
-import storeVuex from '@/store/vuex';
+import { usePlayerStore } from '@/stores/playerStore';
 
 // Interface for interaction handlers
 export interface InteractionHandler {
@@ -110,8 +110,9 @@ class CrosshairService {
       this.interactionText = '';
     }
 
-    storeVuex.commit('SET_INTERACTION_TEXT', this.interactionText);
-    storeVuex.commit('SET_INTERACTION_KEY', this.interactionKey);
+    const playerStore = usePlayerStore();
+
+    playerStore.setInteraction(this.interactionText, this.interactionKey);
   }
 
   /**

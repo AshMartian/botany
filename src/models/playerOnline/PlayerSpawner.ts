@@ -7,10 +7,9 @@ import {
   Scene as BabylonScene,
   TargetCamera,
 } from '@babylonjs/core';
-import SharedPlayerState from '@/models/player/SharedPlayerState';
+import SharedPlayerState from '@/models/playerOnline/SharedPlayerState';
 import WorldManager from '@/models/terrain/WorldManager';
-import store from '@/store/store';
-import storeVuex from '@/store/vuex';
+import { usePlayerStore } from '@/stores/playerStore';
 
 /**
  * Handles player spawning and teleportation functionality
@@ -28,7 +27,8 @@ export default class PlayerSpawner {
    * Spawn player at specified global position
    */
   public async spawnPlayer(spawnGlobalPosition: Vector3): Promise<void> {
-    const playerId = store.getPlayerId();
+    const store = usePlayerStore();
+    const playerId = store.selfPlayerId;
     const playerMesh = this.scene.getMeshByName('playerFoot_' + playerId);
 
     if (!playerMesh) {
@@ -141,9 +141,6 @@ export default class PlayerSpawner {
   ): Promise<boolean> {
     console.log(`Positioning player at global position: ${globalPos.toString()}`);
 
-    // Set loading state
-    storeVuex.commit('LOADING_TOGGLE', true);
-
     try {
       // STEP 1: Set the global player position in the world manager
       WorldManager.setGlobalPlayerPosition(globalPos);
@@ -227,8 +224,6 @@ export default class PlayerSpawner {
         window.playerController.enableControls();
       }
 
-      // Clear loading state
-      storeVuex.commit('LOADING_TOGGLE', false);
       return true;
     } catch (error) {
       console.error('Failed to position player on terrain:', error);
@@ -240,7 +235,7 @@ export default class PlayerSpawner {
 
       // Use fallback height and clear loading state
       playerMesh.position.y = 100; // Fallback height
-      storeVuex.commit('LOADING_TOGGLE', false);
+
       return false;
     }
   }
@@ -301,6 +296,8 @@ export default class PlayerSpawner {
     // Ensure values are within 0-1 range
     const clampedX = Math.max(0, Math.min(1, normalizedX));
     const clampedZ = Math.max(0, Math.min(1, normalizedZ));
+
+    const store = usePlayerStore();
 
     // Store normalized coordinates for global map use
     store.setPlayerGlobalPosition({

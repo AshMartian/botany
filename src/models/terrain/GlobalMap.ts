@@ -15,7 +15,7 @@ import {
   Nullable,
   Camera,
 } from '@babylonjs/core';
-import SharedPlayerState from '@/models/player/SharedPlayerState';
+import SharedPlayerState from '@/models/playerOnline/SharedPlayerState';
 import WorldManager from './WorldManager';
 import { AdvancedDynamicTexture, Control, Button, TextBlock } from '@babylonjs/gui';
 

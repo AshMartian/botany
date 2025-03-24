@@ -9,14 +9,13 @@ import {
   Scalar,
 } from '@babylonjs/core';
 import Collisions from '../mehanics/Collisions';
-import store from '../../store/store';
-import { Forward, Settings } from '@/store/types';
 import { Helpers } from '@/models/Helpers';
 import RayCastFootOne from '@/models/сommon/rayCast/RayCastFootOne';
 import RayCastFootTwo from '@/models/сommon/rayCast/RayCastFootTwo';
 import RayCastFootThree from '@/models/сommon/rayCast/RayCastFootThree';
 import RayCastFootFour from '@/models/сommon/rayCast/RayCastFootFour';
-import { Player } from '@/store/types';
+import { usePlayerStore, Player, Forward } from '@/stores/playerStore';
+import { useSettingsStore, Settings } from '@/stores/settingsStore';
 import Jump from '@/models/сommon/Jump';
 import Rotation from '@/models/сommon/Rotation';
 import RayCastFoot from '@/models/сommon/rayCast/RayCastFoot';
@@ -40,6 +39,7 @@ export default class Move {
   rayCastFoot: Array<RayCastFoot>;
   player: Player;
   lastPositionMobilePlatform: null | Vector3;
+  store: ReturnType<typeof usePlayerStore>;
 
   constructor(playerId: string) {
     this.scene = globalThis.scene;
@@ -49,11 +49,14 @@ export default class Move {
     this.isFlying = true;
     this.playerId = playerId;
 
-    this.settings = store.getSettings();
+    const settingsStore = useSettingsStore();
+    this.store = usePlayerStore();
+
+    this.settings = settingsStore.getSettings;
     this.speed = 0;
     this.speedType = 'Idle';
     this.speedGravity = this.settings.gravityMin;
-    this.player = store.getPlayer(playerId);
+    this.player = this.store.getPlayer(playerId)!;
 
     this.footIsCollision = false;
     this.pointGrounded = null;
@@ -162,7 +165,7 @@ export default class Move {
 
     if (oldIsFlying !== newIsFlying) {
       this.isFlying = newIsFlying;
-      store.setIsFlying(this.playerId, newIsFlying);
+      this.store.setIsFlying(this.playerId, newIsFlying);
     }
   }
 
@@ -222,11 +225,11 @@ export default class Move {
 
     if (this.speedType != speedType) {
       this.speedType = speedType;
-      store.setSpeedType(this.playerId, speedType);
+      this.store.setSpeedType(this.playerId, speedType);
     }
 
     if (this.player.move.speed != this.speed) {
-      store.setSpeed(this.playerId, this.speed);
+      this.store.setSpeed(this.playerId, this.speed);
     }
 
     this.oldForward = { ...forward };

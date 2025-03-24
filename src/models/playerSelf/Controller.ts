@@ -1,23 +1,17 @@
 import { Scene, KeyboardEventTypes } from '@babylonjs/core';
-import store from '@/store/store';
-import storeVuex from '@/store/vuex';
-import { Player } from '@/store/types';
-import { InventoryItemWithPosition } from '@/store/vuex/inventory';
+
+import { usePlayerStore } from '@/stores/playerStore';
+import { useInventoryStore, InventoryItemWithPosition } from '@/stores/inventoryStore';
 
 export default class Controller {
   sensitiveMouse: number;
   mouseIsCaptured: boolean | Element;
-  store: any;
   scene: Scene;
-  playerId: string;
-  player: Player;
 
   constructor() {
     this.sensitiveMouse = 0.004;
     this.mouseIsCaptured = false;
     this.scene = globalThis.scene;
-    this.playerId = store.getSelfPlayerId();
-    this.player = store.getSelfPlayer();
 
     this.mouseEvent();
 
@@ -33,7 +27,14 @@ export default class Controller {
       return;
     }
 
-    const forward = { ...this.player.move.forward };
+    const playerStore = usePlayerStore();
+
+    if (!playerStore.selfPlayer) {
+      console.warn('Player not found in store');
+      return;
+    }
+
+    const forward = { ...playerStore.selfPlayer?.move.forward };
     const eventCode = e.event.code;
     const eventType = e.type;
 
@@ -60,17 +61,19 @@ export default class Controller {
       }
 
       if (eventCode === 'Space') {
-        store.setJump(this.playerId, true);
+        playerStore.setJump(playerStore.selfPlayer.id, true);
       }
+
+      const inventoryStore = useInventoryStore();
 
       // Handle inventory opening with I key or Escape key or Tab key
       if (eventCode === 'KeyI' || eventCode === 'Escape' || eventCode === 'Tab') {
-        const currentState = storeVuex.getters['inventory/isInventoryOpen'];
+        const currentState = inventoryStore.isInventoryOpen;
 
         // Only handle opening the inventory, not closing
         if (!currentState) {
           console.log('Opening inventory from Controller');
-          storeVuex.commit('inventory/SET_INVENTORY_OPEN', true);
+          inventoryStore.toggleInventory();
 
           // Release pointer lock when opening inventory
           if (document.pointerLockElement) {
@@ -89,15 +92,15 @@ export default class Controller {
       if (eventCode.match(/^Digit[1-9]$/)) {
         const slotIndex = parseInt(eventCode.replace('Digit', '')) - 1;
         console.log(`Setting hotbar active slot to: ${slotIndex}`);
-        storeVuex.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
+        inventoryStore.setActiveHotbarSlot(slotIndex);
 
         // Get the item in the selected slot
-        const slots = storeVuex.getters['inventory/getHotbarItems'];
+        const slots = inventoryStore.hotbarItems;
         const selectedSlot = slots[slotIndex] as InventoryItemWithPosition;
 
         if (selectedSlot && selectedSlot.stackId) {
           // If there's an item in the slot, use it
-          storeVuex.dispatch('inventory/useItem', selectedSlot.stackId);
+          inventoryStore.useItem(playerStore.selfPlayer.id, selectedSlot.stackId);
         } else {
           console.log(`No item in hotbar slot ${slotIndex}`, selectedSlot, slots);
         }
@@ -127,11 +130,11 @@ export default class Controller {
       }
 
       if (eventCode === 'Space') {
-        store.setJump(this.playerId, false);
+        playerStore.setJump(playerStore.selfPlayer.id, false);
       }
     }
 
-    store.setForward(this.playerId, forward);
+    playerStore.setForward(playerStore.selfPlayer.id, forward);
   }
 
   private mouseEvent() {
@@ -139,7 +142,7 @@ export default class Controller {
 
     elementContent.addEventListener('click', (e) => {
       // Check if inventory is open - don't capture if it is
-      const inventoryOpen = storeVuex.getters['inventory/isInventoryOpen'] || false;
+      const inventoryOpen = useInventoryStore().isOpen;
       if (inventoryOpen) {
         return; // Don't capture mouse when inventory is open
       }
@@ -180,7 +183,10 @@ export default class Controller {
       if (this.mouseIsCaptured) {
         const rotateX = e.movementY * this.sensitiveMouse;
         const rotateY = e.movementX * this.sensitiveMouse;
-        store.setRotate(this.playerId, rotateX, rotateY);
+        const playerStore = usePlayerStore();
+        if (playerStore.selfPlayer) {
+          playerStore.setRotate(playerStore.selfPlayer.id, rotateX, rotateY);
+        }
       }
     });
   }

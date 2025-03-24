@@ -3,7 +3,7 @@
     <div class="main_background_points">
       <div class="top_bar_container">
         <div class="top_bar">
-          <div @click="setCurrenPage('SettingsPage')" class="settings">
+          <div @click="goToSettingsPage" class="settings">
             <img src="../assets/images/settings-icon.svg" />
           </div>
           <div class="sound">
@@ -23,7 +23,7 @@
           </div>
         </div>
         <div class="play">
-          <div @click="setCurrenPage('PlayWithFiendsPage')" class="button">
+          <div @click="goToPlayWithFriendsPage" class="button">
             <span class="label">{{ $t('message.play_with_friends') }}</span>
             <span class="icon">
               <span></span>
@@ -39,17 +39,31 @@
 <script lang="ts">
 import { defineComponent } from 'vue';
 import '../styles/main_page.sass';
+import { useAppStore } from '@/stores/appStore';
 
 export default defineComponent({
-  methods: {
-    setCurrenPage(page: string) {
-      this.$store.commit('SET_PAGE', page);
-    },
-    play() {
-      this.$store.commit('SET_PASSWORD', null);
-      this.$store.commit('SET_PAGE', 'LevelPage');
-      // this.$store.commit('SET_PLAY');
-    },
+  setup() {
+    // Use Pinia app store instead of Vuex
+    const appStore = useAppStore();
+
+    const goToSettingsPage = () => {
+      appStore.goToSettingsPage();
+    };
+
+    const goToPlayWithFriendsPage = () => {
+      appStore.goToPlayWithFriendsPage();
+    };
+
+    const play = () => {
+      // Use Pinia actions instead of Vuex mutations
+      appStore.goToLevelPage('1');
+    };
+
+    return {
+      goToSettingsPage,
+      goToPlayWithFriendsPage,
+      play,
+    };
   },
 });
 </script>

@@ -6,12 +6,14 @@
 
 <script>
 import MapButton from '@/views/gui/topbar/MapButton';
+import { useAppStore } from '@/stores/appStore';
 
 export default {
   components: { MapButton },
   methods: {
     openMenu() {
-      this.$store.commit('SET_OPEN_MENU', true);
+      const appStore = useAppStore();
+      appStore.setMenuOpen(true);
     },
   },
 };

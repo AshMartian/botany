@@ -1,33 +1,10 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { setActivePinia, createPinia } from 'pinia';
 import type { MockInstance } from 'vitest';
 import { render, fireEvent } from '@testing-library/vue';
-import { Store } from 'vuex';
-import { InventoryState, InventoryItemWithPosition } from '@/store/vuex/inventory';
-
-interface StoreState {
-  inventory: InventoryState;
-  hotbar?: { activeSlot: number };
-}
 import '@testing-library/jest-dom';
-import { createStore } from 'vuex';
-import { inventory } from '@/store/vuex/inventory';
 import { v4 as generateUUID } from 'uuid';
-
-// Mock dependencies
-vi.mock('@/store/store', () => ({
-  default: {
-    getSelfPlayerId: () => 'test-player-id',
-    getPlayer: () => ({ inventory: [] }),
-    notifySubscribers: vi.fn(),
-    refreshInventory: vi.fn(),
-  },
-}));
-
-vi.mock('@/services/PlayerInventory', () => ({
-  playerInventory: {
-    syncWithStore: vi.fn(),
-  },
-}));
+import { useInventoryStore, InventoryItemWithPosition } from '@/stores/inventoryStore';
 
 // Mock IndexedDB
 vi.mock('idb', () => ({
@@ -38,25 +15,24 @@ vi.mock('idb', () => ({
 }));
 
 describe('Stack Splitting Functionality', () => {
-  let store: Store<StoreState>;
-  let dispatchSpy: MockInstance;
+  let inventoryStore: ReturnType<typeof useInventoryStore>;
+  const TEST_PLAYER_ID = 'test-player-id';
 
   beforeEach(() => {
-    // Set up a fresh store for each test
-    store = createStore({
-      modules: {
-        inventory: {
-          ...inventory,
-          state: () => ({
-            items: [],
-            isInventoryOpen: false,
-          }),
-        },
-      },
-    }) as unknown as Store<StoreState>;
+    // Create a fresh pinia instance for each test
+    const pinia = createPinia();
+    setActivePinia(pinia);
 
-    // Spy on dispatch to verify it's called with correct arguments
-    dispatchSpy = vi.spyOn(store, 'dispatch');
+    // Get a fresh instance of the inventory store
+    inventoryStore = useInventoryStore();
+
+    // Reset the store state
+    inventoryStore.$reset();
+
+    // Spy on store methods to verify they're called correctly
+    vi.spyOn(inventoryStore, 'updateItemQuantity');
+    vi.spyOn(inventoryStore, 'addSplitStack');
+    vi.spyOn(inventoryStore, 'moveItem');
   });
 
   test('splitting a stack creates two stacks with the correct quantities', async () => {
@@ -76,35 +52,37 @@ describe('Stack Splitting Functionality', () => {
     };
 
     // Add item to store
-    await store.commit('inventory/ADD_ITEM', stackableItem);
+    inventoryStore.setItems([stackableItem]);
 
     // Verify the item was added
-    expect(store.state.inventory.items.length).toBe(1);
-    expect(store.state.inventory.items[0].quantity).toBe(10);
+    expect(inventoryStore.items.length).toBe(1);
+    expect(inventoryStore.items[0].quantity).toBe(10);
 
     // Split the stack (simulating shift+click)
-    await store.dispatch('inventory/updateItemQuantity', {
-      stackId: store.state.inventory.items[0].stackId,
-      quantity: 5, // Reduce original stack to 5
-    });
+    await inventoryStore.updateItemQuantity(
+      TEST_PLAYER_ID,
+      inventoryStore.items[0].stackId,
+      5 // Reduce original stack to 5
+    );
 
-    await store.dispatch('inventory/addSplitStack', {
-      originalItem: store.state.inventory.items[0],
-      quantity: 5, // New stack gets 5
-      position: {
+    await inventoryStore.addSplitStack(
+      TEST_PLAYER_ID,
+      inventoryStore.items[0],
+      5, // New stack gets 5
+      {
         type: 'inventory',
         index: 1,
-      },
-    });
+      }
+    );
 
     // Verify we now have two stacks
-    expect(store.state.inventory.items.length).toBe(2);
-    expect(store.state.inventory.items[0].quantity).toBe(5);
-    expect(store.state.inventory.items[1].quantity).toBe(5);
+    expect(inventoryStore.items.length).toBe(2);
+    expect(inventoryStore.items[0].quantity).toBe(5);
+    expect(inventoryStore.items[1].quantity).toBe(5);
 
     // Verify positions are correct
-    expect(store.state.inventory.items[0].position.index).toBe(0);
-    expect(store.state.inventory.items[1].position.index).toBe(1);
+    expect(inventoryStore.items[0].position.index).toBe(0);
+    expect(inventoryStore.items[1].position.index).toBe(1);
   });
 
   test('splitting an odd-numbered stack rounds down for the new stack', async () => {
@@ -124,30 +102,32 @@ describe('Stack Splitting Functionality', () => {
     };
 
     // Add item to store
-    await store.commit('inventory/ADD_ITEM', stackableItem);
+    inventoryStore.setItems([stackableItem]);
 
     // Get the original stackId
-    const originalStackId = store.state.inventory.items[0].stackId;
+    const originalStackId = inventoryStore.items[0].stackId;
 
     // Split the stack (simulating shift+click)
-    await store.dispatch('inventory/updateItemQuantity', {
-      stackId: originalStackId,
-      quantity: 4, // Original keeps 4
-    });
+    await inventoryStore.updateItemQuantity(
+      TEST_PLAYER_ID,
+      originalStackId,
+      4 // Original keeps 4
+    );
 
-    await store.dispatch('inventory/addSplitStack', {
-      originalItem: store.state.inventory.items[0],
-      quantity: 3, // New stack gets 3 (rounded down from 7/2)
-      position: {
+    await inventoryStore.addSplitStack(
+      TEST_PLAYER_ID,
+      inventoryStore.items[0],
+      3, // New stack gets 3 (rounded down from 7/2)
+      {
         type: 'inventory',
         index: 1,
-      },
-    });
+      }
+    );
 
     // Verify quantities
-    expect(store.state.inventory.items.length).toBe(2);
-    expect(store.state.inventory.items[0].quantity).toBe(4);
-    expect(store.state.inventory.items[1].quantity).toBe(3);
+    expect(inventoryStore.items.length).toBe(2);
+    expect(inventoryStore.items[0].quantity).toBe(4);
+    expect(inventoryStore.items[1].quantity).toBe(3);
   });
 
   test('splitting generates a unique stackId for the new stack', async () => {
@@ -167,29 +147,22 @@ describe('Stack Splitting Functionality', () => {
     };
 
     // Add item to store
-    await store.commit('inventory/ADD_ITEM', stackableItem);
+    inventoryStore.setItems([stackableItem]);
 
     // Get the original stackId
-    const originalStackId = store.state.inventory.items[0].stackId;
+    const originalStackId = inventoryStore.items[0].stackId;
 
     // Split the stack
-    await store.dispatch('inventory/updateItemQuantity', {
-      stackId: originalStackId,
-      quantity: 3,
-    });
+    await inventoryStore.updateItemQuantity(TEST_PLAYER_ID, originalStackId, 3);
 
-    await store.dispatch('inventory/addSplitStack', {
-      originalItem: store.state.inventory.items[0],
-      quantity: 3,
-      position: {
-        type: 'inventory',
-        index: 1,
-      },
+    await inventoryStore.addSplitStack(TEST_PLAYER_ID, inventoryStore.items[0], 3, {
+      type: 'inventory',
+      index: 1,
     });
 
     // Verify stackIds are different
-    expect(store.state.inventory.items[0].stackId).toBe(originalStackId);
-    expect(store.state.inventory.items[1].stackId).not.toBe(originalStackId);
+    expect(inventoryStore.items[0].stackId).toBe(originalStackId);
+    expect(inventoryStore.items[1].stackId).not.toBe(originalStackId);
   });
 
   test('combining stacks respects maxStackSize', async () => {
@@ -219,26 +192,26 @@ describe('Stack Splitting Functionality', () => {
     };
 
     // Add both stacks to the inventory
-    await store.commit('inventory/ADD_ITEM', stack1);
-    await store.commit('inventory/SET_ITEMS', [store.state.inventory.items[0], stack2]);
+    inventoryStore.setItems([stack1, stack2]);
 
     // Verify we have two stacks
-    expect(store.state.inventory.items.length).toBe(2);
+    expect(inventoryStore.items.length).toBe(2);
 
     // Move stack2 onto stack1 (simulating drag and drop)
-    await store.dispatch('inventory/moveItem', {
-      stackId: stack2.stackId,
-      newPosition: {
-        type: 'inventory',
-        index: 0,
-      },
+    await inventoryStore.moveItem(TEST_PLAYER_ID, stack2.stackId, {
+      type: 'inventory',
+      index: 0,
     });
 
-    // Verify that stack1 is filled to max (10) and remaining quantity (3) is in stack2
-    const allItems = store.state.inventory.items;
+    // Verify that stack1 is filled to max (10) and remaining quantity (3) is in another position
+    const allItems = inventoryStore.items;
+
+    // Find the filled stack (should be at index 0)
     const filledStack = allItems.find(
       (item: InventoryItemWithPosition) => item.position.index === 0
     );
+
+    // Find the remainder stack (should be the other stack)
     const remainderStack = allItems.find(
       (item: InventoryItemWithPosition) => item.stackId !== filledStack?.stackId
     );
@@ -268,18 +241,15 @@ describe('Stack Splitting Functionality', () => {
     };
 
     // Add item to store
-    await store.commit('inventory/ADD_ITEM', stackableItem);
+    inventoryStore.setItems([stackableItem]);
 
     // Get the stackId
-    const stackId = store.state.inventory.items[0].stackId;
+    const stackId = inventoryStore.items[0].stackId;
 
     // Reduce quantity to zero
-    await store.dispatch('inventory/updateItemQuantity', {
-      stackId,
-      quantity: 0,
-    });
+    await inventoryStore.updateItemQuantity(TEST_PLAYER_ID, stackId, 0);
 
     // Verify the stack was removed
-    expect(store.state.inventory.items.length).toBe(0);
+    expect(inventoryStore.items.length).toBe(0);
   });
 });

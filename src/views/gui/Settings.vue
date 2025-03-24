@@ -5,7 +5,7 @@
         <div class="title margin_bottom">Settings</div>
 
         <ul class="list">
-          <li v-for="(field, index) in this.fields" :key="index">
+          <li v-for="(field, index) in fields" :key="index">
             <label>
               <input
                 type="checkbox"
@@ -26,31 +26,36 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from 'vue';
+import { defineComponent, computed } from 'vue';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 export default defineComponent({
   name: 'game-home',
-  computed: {
-    fields(): any {
-      return this.$store.getters.settingFields;
-    },
-    settingsOpen(): boolean {
-      return this.$store.state.settingsLevel.open;
-    },
-  },
-  methods: {
-    saveField(name: string, event: any) {
-      this.$nextTick(() => {
-        this.$store.commit('SET_SETTING_FIELD_VALUE', { name, value: event.target.checked });
+  setup() {
+    const settingsStore = useSettingsStore();
+
+    // Use computed properties from the Pinia store
+    const fields = computed(() => settingsStore.settingFields);
+    const settingsOpen = computed(() => settingsStore.open);
+
+    // Save field value
+    const saveField = (name: string, event: any) => {
+      settingsStore.setSettingFieldValue({
+        name,
+        value: event.target.checked,
       });
-    },
-    close() {
-      this.$store.commit('SET_SETTINGS_OPEN', false);
-    },
-  },
-  data: function () {
+    };
+
+    // Close settings panel
+    const close = () => {
+      settingsStore.setSettingsOpen(false);
+    };
+
     return {
-      soundEnable: true,
+      fields,
+      settingsOpen,
+      saveField,
+      close,
     };
   },
 });

@@ -7,7 +7,6 @@ import {
 } from '@babylonjs/core';
 import TerrainChunk from './TerrainChunk';
 import WorldManager from './WorldManager';
-import store from '@/store/store';
 
 declare global {
   interface Window {
@@ -115,17 +114,6 @@ export default class TerrainManager {
     const now = performance.now();
     if (now - this.lastUpdateTime < 250) return; // Limit to 4 updates per second max
     this.lastUpdateTime = now;
-
-    // NEW LOGGING: Add detailed position tracking in each update
-    const playerMesh = this.scene.getMeshByName('playerFoot_' + (store.getPlayerId() || ''));
-    if (this.debugVerbose && playerMesh) {
-      console.log(`===== TERRAIN UPDATE =====
-      ENGINE POS: ${playerMesh.position.toString()}
-      GLOBAL POS: ${WorldManager.toGlobal(playerMesh.position).toString()}
-      LOADED CHUNKS: ${this.loadedChunks.size}
-      LOADING CHUNKS: ${this.loadingChunks.size}
-    `);
-    }
 
     // CRITICAL: Protect against concurrent updates with a lock
     if (this.loadingLock) {

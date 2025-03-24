@@ -1,5 +1,5 @@
 import { Sound } from '@babylonjs/core';
-import store from '@/store/vuex';
+import { useSettingsStore } from '@/stores/settingsStore';
 import SoundMain from '@/models/sounds/SoundMain';
 
 export default class Background extends SoundMain {
@@ -9,17 +9,18 @@ export default class Background extends SoundMain {
   constructor() {
     super();
     this.filePath = this.path + '/' + 'cosmos.wav';
+    const store = useSettingsStore();
 
     this.sound = new Sound(
       'Cosmos',
       this.filePath,
       globalThis.scene,
       () => {
-        this.subscribe(store, this.sound, 'sound');
+        // this.subscribe(store, this.sound, 'sound');
       },
       {
         loop: true,
-        autoplay: store.getters.getSettingsValueByName('sound'),
+        autoplay: store.getSettingsValueByName('sound'),
       }
     );
   }

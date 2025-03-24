@@ -1,5 +1,5 @@
 import { AbstractMesh, Animation, Scene, Tools, Animatable } from '@babylonjs/core';
-import store from '@/store/store';
+import { usePlayerStore } from '@/stores/playerStore';
 import { Helpers } from '@/models/Helpers';
 
 export default class Rotation {
@@ -36,7 +36,8 @@ export default class Rotation {
   }
 
   private subscribe() {
-    store.subscribe(this.playerId, (type: string) => {
+    const store = usePlayerStore();
+    store.subscribe(store.selfPlayerId!, (type: string) => {
       if (type === 'forward') {
         this.setAngle();
       }
@@ -51,6 +52,8 @@ export default class Rotation {
     if (this.isAnimating) {
       return;
     }
+
+    const store = usePlayerStore();
 
     const state = store.getPlayer(this.playerId);
 

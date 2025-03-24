@@ -1,8 +1,8 @@
 // src/services/RegolithCollector.ts
 import { PickingInfo } from '@babylonjs/core';
 import { InteractionHandler } from '@/services/CrosshairService';
-import playerInventory from '@/services/PlayerInventory';
-import store from '@/store/store';
+import { useInventoryStore } from '@/stores/inventoryStore';
+import { usePlayerStore } from '@/stores/playerStore';
 import { Regolith } from '@/models/inventory/items';
 
 /**
@@ -23,25 +23,41 @@ class RegolithCollector implements InteractionHandler {
     if (!hit.pickedMesh) return false;
 
     // Check if the hit object is a terrain chunk
-    if (!hit.pickedMesh.name.includes('terrain_chunk')) return false;
+    const meshName = hit.pickedMesh.name.toLowerCase();
+    if (!meshName.includes('terrain') && !meshName.includes('ground')) {
+      return false;
+    }
 
-    // Check if we're within collection distance (redundant but safety check)
-    if (hit.distance > 10) return false;
+    // Check if we're on cooldown
+    if (Date.now() - this.lastCollectionTime < this.cooldownTime) {
+      return false;
+    }
 
-    if (!playerInventory.hasSpaceForResource(new Regolith(1))) return false;
+    // Check if player has space in inventory
+    const inventoryStore = useInventoryStore();
+    const playerStore = usePlayerStore();
+    const playerId = playerStore.currentPlayerId;
 
-    // Check cooldown
-    const now = Date.now();
-    if (now - this.lastCollectionTime < this.cooldownTime) return false;
+    if (!playerId) return false;
 
-    return true;
+    // Check if there's space for regolith
+    return inventoryStore.hasSpaceForItem(new Regolith(1));
   }
 
   /**
-   * Get the interaction text to show when looking at collectible regolith
+   * Get the interaction text to display
+   * @returns The interaction prompt text
    */
   public getInteractionText(): [string, string?] {
-    return ['Collect Regolith'];
+    // If on cooldown, show different message
+    if (Date.now() - this.lastCollectionTime < this.cooldownTime) {
+      const remainingTime = Math.ceil(
+        (this.cooldownTime - (Date.now() - this.lastCollectionTime)) / 1000
+      );
+      return [`Collecting (${remainingTime}s)`];
+    }
+
+    return ['Collect Regolith', 'F'];
   }
 
   /**
@@ -51,10 +67,14 @@ class RegolithCollector implements InteractionHandler {
   public onInteract(hit: PickingInfo): void {
     if (!this.canInteract(hit)) return;
 
-    const playerId = store.getSelfPlayerId();
+    const inventoryStore = useInventoryStore();
+    const playerStore = usePlayerStore();
+    const playerId = playerStore.currentPlayerId;
 
-    // Give regolith to the player
-    playerInventory.giveItemToPlayer(playerId, new Regolith(1));
+    if (!playerId) return;
+
+    // Give regolith to the player using the Pinia store
+    inventoryStore.addItem(playerId, new Regolith(1));
 
     // Update cooldown time
     this.lastCollectionTime = Date.now();

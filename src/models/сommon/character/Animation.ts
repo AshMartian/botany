@@ -4,9 +4,9 @@ import Idle from './animation_groups/Idle';
 import Run from './animation_groups/Run';
 import JumpMiddle from './animation_groups/JumpMiddle';
 import JumpFinish from './animation_groups/JumpFinish';
-import store from '@/store/store';
+import { usePlayerStore, Player } from '@/stores/playerStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import Sprint from '@/models/сommon/character/animation_groups/Sprint';
-import { Player } from '@/store/types';
 import { Helpers } from '@/models/Helpers';
 import Walk from '@/models/сommon/character/animation_groups/Walk';
 
@@ -23,13 +23,18 @@ export default class Animation {
   timeOutId: number | null;
   timeOutIdJumpMiddle: number | null;
   lastTimeFly: number;
+  settingsStore = useSettingsStore();
 
   constructor(playerId: string) {
     this.playerId = playerId;
     this.scene = globalThis.scene;
     this.animationGroups = [];
     this.blockedOtherAnimation = false;
-    this.statePlayer = store.getPlayer(playerId);
+    const store = usePlayerStore();
+    if (!store.selfPlayer) {
+      throw 'Player not found in store';
+    }
+    this.statePlayer = store.selfPlayer;
     this.timeOutId = null;
     this.timeOutIdJumpMiddle = null;
     this.lastTimeFly = 0;
@@ -60,7 +65,9 @@ export default class Animation {
   }
 
   private subscribeStore() {
-    store.subscribe(this.playerId, (type: string) => {
+    const store = usePlayerStore();
+
+    store.subscribe(store.selfPlayerId!, (type: string) => {
       if (!this.storeTypesEvent.includes(type) || this.blockedOtherAnimation) {
         return;
       }
@@ -110,7 +117,7 @@ export default class Animation {
   blending() {
     this.disableAnimations();
     const transitionSpeed = Helpers.numberFixed(
-      store.getSettings().transitionAnimationSpeed * average,
+      this.settingsStore.getSettings.transitionAnimationSpeed * average,
       2
     );
 
@@ -131,7 +138,7 @@ export default class Animation {
   }
   private disableAnimations() {
     const transitionSpeed = Helpers.numberFixed(
-      store.getSettings().transitionAnimationSpeed * average,
+      this.settingsStore.getSettings.transitionAnimationSpeed * average,
       2
     );
 

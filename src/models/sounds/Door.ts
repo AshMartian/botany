@@ -1,5 +1,5 @@
 import { Mesh, Scene, Sound } from '@babylonjs/core';
-import store from '@/store/vuex';
+import { useSettingsStore } from '@/stores/settingsStore';
 import SoundMain from '@/models/sounds/SoundMain';
 
 export default class Door extends SoundMain {
@@ -31,14 +31,16 @@ export default class Door extends SoundMain {
   }
 
   playOpen(mesh: Mesh) {
-    if (store.getters.getSettingsValueByName('sound')) {
+    const store = useSettingsStore();
+    if (store.getSettingsValueByName('sound')) {
       this.soundOpen.attachToMesh(mesh);
       this.soundOpen.play();
     }
   }
 
   playClose(mesh: Mesh) {
-    if (store.getters.getSettingsValueByName('sound')) {
+    const store = useSettingsStore();
+    if (store.getSettingsValueByName('sound')) {
       this.soundClose.attachToMesh(mesh);
       this.soundClose.play();
     }

@@ -1,22 +1,23 @@
 import { Mesh, Tools } from '@babylonjs/core';
-import store from '@/store/store';
-import { Player } from '@/store/types';
+import { usePlayerStore, Player } from '@/stores/playerStore';
 
 export default class Rotation {
   meshFoot: Mesh;
   meshHead: Mesh;
   player: Player;
+  playerStore = usePlayerStore();
 
   constructor(playerId: string) {
     this.meshFoot = globalThis.scene.getMeshById('playerFoot_' + playerId) as Mesh;
     this.meshHead = globalThis.scene.getMeshById('playerHead_' + playerId) as Mesh;
-    this.player = store.getPlayer(playerId);
+
+    this.player = this.playerStore.getPlayer(playerId)!;
 
     this.subscribe();
   }
 
   private subscribe() {
-    store.subscribe(this.player.id, (type: string) => {
+    this.playerStore.subscribe(this.player.id, (type: string) => {
       if (type === 'rotate') {
         this.rotate();
       }

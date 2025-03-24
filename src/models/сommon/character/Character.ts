@@ -14,9 +14,8 @@ import {
 import Animation from './Animation';
 import ContainerManager from '@/models/scene/ContainerManager';
 import Rotation from './Rotation';
-import store from '@/store/store';
+import { usePlayerStore, Player } from '@/stores/playerStore';
 import PlayerSound from '@/models/sounds/Player';
-import { Player } from '@/store/types';
 
 export default class Character {
   scene: Scene;
@@ -39,7 +38,8 @@ export default class Character {
   constructor(playerId: string) {
     this.scene = globalThis.scene;
     this.playerId = playerId;
-    this.statePlayer = store.getPlayer(playerId);
+    const store = usePlayerStore();
+    this.statePlayer = store.getPlayer(playerId)!;
     this.meshFoot = this.scene.getMeshById('playerFoot_' + playerId) as Mesh;
     this.meshHead = this.scene.getMeshById('playerHead_' + playerId) as AbstractMesh;
     this.meshBodyId = 'characterBody_' + this.playerId;
@@ -55,8 +55,13 @@ export default class Character {
 
   load(callback: any) {
     const path = import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/characters/';
+    const store = usePlayerStore();
 
     const player = store.getPlayer(this.playerId);
+    if (!player) {
+      console.error('Player not found in store');
+      return;
+    }
     const assetContainer = ContainerManager.getContainer(player.character, path);
 
     assetContainer.then((container) => {
@@ -83,8 +88,8 @@ export default class Character {
         }
 
         if (mesh.name == 'Hair') {
-          const material = new PBRMaterial('Hair_' + this.playerId, scene);
-          const skinColor = store.getPlayer(this.playerId).skinColor;
+          const material = new PBRMaterial('Hair_' + this.playerId, this.scene);
+          const skinColor = player.skinColor;
 
           material.albedoColor = new Color3(skinColor.r, skinColor.g, skinColor.b);
           material.roughness = 1.0;
@@ -176,33 +181,37 @@ export default class Character {
   }
 
   private setSounds() {
-    const player = store.getPlayer(this.playerId);
-    const sound = new PlayerSound(this.playerId);
-
-    store.subscribe(this.playerId, (type: string) => {
-      if (!player.move.isFlying) {
-        if (type === 'isFlying') {
-          sound.stopWalk();
-          sound.stopSprint();
-          this.blockedOtherSounds = true;
-          sound.playJumpFinish();
-
-          setTimeout(() => {
-            this.blockedOtherSounds = false;
-            this.playSoundByState(player, sound);
-          }, 150);
-
-          return;
-        }
-
-        this.playSoundByState(player, sound);
-        return;
-      }
-
-      sound.stopWalk();
-      sound.stopSprint();
-      sound.stopJumpFinish();
-    });
+    // const store = usePlayerStore();
+    // const player = store.getPlayer(this.playerId);
+    // const sound = new PlayerSound(this.playerId);
+    // store.$onAction(
+    //   ({
+    //     name, // name of the action
+    //     store, // store instance, same as `someStore`
+    //     args, // array of parameters passed to the action
+    //     after, // hook after the action returns or resolves
+    //     onError, // hook if the action throws or rejects
+    //   }) => {
+    //     if (!player.move.isFlying) {
+    //       if (type === 'isFlying') {
+    //         sound.stopWalk();
+    //         sound.stopSprint();
+    //         this.blockedOtherSounds = true;
+    //         sound.playJumpFinish();
+    //         setTimeout(() => {
+    //           this.blockedOtherSounds = false;
+    //           this.playSoundByState(player, sound);
+    //         }, 150);
+    //         return;
+    //       }
+    //       this.playSoundByState(player, sound);
+    //       return;
+    //     }
+    //     sound.stopWalk();
+    //     sound.stopSprint();
+    //     sound.stopJumpFinish();
+    //   }
+    // );
   }
 
   private playSoundByState(player: Player, sound: PlayerSound) {
@@ -255,8 +264,9 @@ export default class Character {
     this.particleSystem.addColorGradient(0, new Color4(0.52, 0.3, 0.2, 0.2)); //color at start of particle lifetime
     this.particleSystem.addColorGradient(1, new Color4(1, 0.9, 0.9, 0)); //color at end of particle lifetime
     this.particleSystem.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    const store = usePlayerStore();
 
-    store.subscribe(this.playerId, (type: string) => {
+    store.subscribe(store.selfPlayerId!, (type: string) => {
       if (type === 'isFlying') {
         if (!this.statePlayer.move.isFlying) {
           this.particleSystem.start();

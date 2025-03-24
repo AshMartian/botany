@@ -10,19 +10,17 @@
 
 <script lang="ts">
 import { defineComponent, computed } from 'vue';
-import { useStore } from 'vuex';
+import { usePlayerStore } from '@/stores/playerStore';
 
 export default defineComponent({
   name: 'CrosshairTooltip',
 
   setup() {
-    const store = useStore();
-    const interactionText = computed(() => store.state.interactionText);
-    const interactionKey = computed(() => store.state.interactionKey);
+    const store = usePlayerStore();
 
     return {
-      interactionText,
-      interactionKey,
+      interactionText: computed(() => store.interaction?.text),
+      interactionKey: computed(() => store.interaction?.key),
     };
   },
 });

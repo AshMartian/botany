@@ -9,13 +9,11 @@ import {
   Vector3,
 } from '@babylonjs/core';
 
-import storeVuex from '@/store/vuex';
 import Environment from '@/models/scene/Environment';
 
 export default class GameScene {
   babylonScene: BabylonScene;
   engine: Engine;
-  store: any;
 
   constructor(engine: Engine) {
     this.babylonScene = new BabylonScene(engine);
@@ -67,51 +65,53 @@ export default class GameScene {
 
     // For Mars terrain, we'll use procedural generation instead of loading a static map
     // But we'll keep the option to load a map for other levels
-    if (storeVuex.state.levelId === 1) {
-      try {
-        callbackLoad();
-        const divFps = document.getElementById('fps_counter') as HTMLElement;
-        this.optimize();
+    // if (storeVuex.state.levelId === 1) {
+    try {
+      callbackLoad();
+      const divFps = document.getElementById('fps_counter') as HTMLElement;
+      this.optimize();
 
-        this.engine.runRenderLoop(() => {
-          this.babylonScene.render();
-          divFps.innerHTML = this.engine.getFps().toFixed() + ' fps';
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    } else {
-      const fileName = 'map.babylon';
-      const filePath =
-        import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/level_' + storeVuex.state.levelId + '/';
-
-      const timestamp = 1;
-      const filePathWithTimestamp = fileName + '?timestamp=' + timestamp;
-
-      SceneLoader.Append(
-        filePath,
-        filePathWithTimestamp,
-        this.babylonScene,
-        () => {
-          try {
-            callbackLoad();
-            const divFps = document.getElementById('fps_counter') as HTMLElement;
-            this.optimize();
-
-            this.engine.runRenderLoop(() => {
-              this.babylonScene.render();
-              divFps.innerHTML = this.engine.getFps().toFixed() + ' fps';
-            });
-          } catch (e) {
-            console.error(e);
-          }
-        },
-        null,
-        (scene, message, error) => {
-          console.error(error, message);
-        }
-      );
+      this.engine.runRenderLoop(() => {
+        this.babylonScene.render();
+        divFps.innerHTML = this.engine.getFps().toFixed() + ' fps';
+      });
+    } catch (e) {
+      console.error(e);
     }
+    // }
+    // If we wanted to have a static map for other levels, we could uncomment the following code
+    // else {
+    //   const fileName = 'map.babylon';
+    //   const filePath =
+    //     import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/level_' + storeVuex.state.levelId + '/';
+
+    //   const timestamp = 1;
+    //   const filePathWithTimestamp = fileName + '?timestamp=' + timestamp;
+
+    //   SceneLoader.Append(
+    //     filePath,
+    //     filePathWithTimestamp,
+    //     this.babylonScene,
+    //     () => {
+    //       try {
+    //         callbackLoad();
+    //         const divFps = document.getElementById('fps_counter') as HTMLElement;
+    //         this.optimize();
+
+    //         this.engine.runRenderLoop(() => {
+    //           this.babylonScene.render();
+    //           divFps.innerHTML = this.engine.getFps().toFixed() + ' fps';
+    //         });
+    //       } catch (e) {
+    //         console.error(e);
+    //       }
+    //     },
+    //     null,
+    //     (scene, message, error) => {
+    //       console.error(error, message);
+    //     }
+    //   );
+    // }
   }
 
   private optimize() {

@@ -15,10 +15,81 @@ import {
   Color4,
 } from '@babylonjs/core';
 
-import storeVuex from '@/store/vuex';
-import { Environment as EnvironmentSettings } from '@/store/vuex/types';
+// import { useSettingsStore } from '@/stores/settingsStore'; // Move settings to store eventually
 import LightPoints from '@/models/scene/LightPoints';
 // Sky import removed as it's not used
+
+export interface EnvironmentSettings {
+  hdr: {
+    rotation: number;
+    intensity: number;
+    gammaSpace: boolean;
+  };
+  glow: {
+    mainTextureFixedSize: number;
+    blurKernelSize: number;
+    intensity: number;
+  };
+  fog: {
+    color: {
+      r: number;
+      g: number;
+      b: number;
+    };
+    density: number;
+    mode: number;
+  };
+  directionalLight: {
+    intensity: number;
+  };
+  shadowGenerator: {
+    mapSize: number;
+    usePercentageCloserFiltering: boolean;
+    numCascades: number;
+    autoCalcDepthBounds: boolean;
+    depthClamp: boolean;
+    stabilizeCascades: boolean;
+    cascadeBlendPercentage: number;
+    bias: number;
+    filteringQuality: number;
+  };
+}
+
+const environmentSettings = {
+  hdr: {
+    rotation: 0,
+    intensity: 0.6,
+    gammaSpace: false,
+  },
+  glow: {
+    mainTextureFixedSize: 3000,
+    blurKernelSize: 6,
+    intensity: 0.6,
+  },
+  fog: {
+    color: {
+      r: 65,
+      g: 56,
+      b: 35,
+    },
+    density: 0.025,
+    mode: 1,
+  },
+  directionalLight: {
+    intensity: 3,
+  },
+  shadowGenerator: {
+    mapSize: 2064,
+    usePercentageCloserFiltering: true,
+    numCascades: 4,
+    autoCalcDepthBounds: false,
+    depthClamp: true,
+    stabilizeCascades: false,
+    cascadeBlendPercentage: 0,
+    bias: 0.001,
+    filteringQuality: 0,
+  },
+};
 
 export default class Environment {
   shadowGenerator: ShadowGenerator | null;
@@ -28,7 +99,7 @@ export default class Environment {
   constructor() {
     this.scene = globalThis.scene;
     this.shadowGenerator = null;
-    this.settings = storeVuex.state.settings.environment;
+    this.settings = environmentSettings;
   }
 
   setupHDR() {

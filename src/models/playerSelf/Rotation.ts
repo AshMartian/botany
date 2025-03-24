@@ -1,5 +1,5 @@
 import { Mesh, Vector3, Scene as BabylonScene } from '@babylonjs/core';
-import { Forward } from '@/store/types';
+import { Forward } from '@/stores/playerStore';
 
 export default class Rotation {
   private mesh: Mesh | null = null;

@@ -13,10 +13,13 @@
 </style>
 
 <script>
+import { useAppStore } from '@/stores/appStore';
+
 export default {
   methods: {
     open() {
-      this.$store.commit('MAP_TOGGLE');
+      const appStore = useAppStore();
+      appStore.setMapOpen(!appStore.mapOpen);
     },
   },
 };

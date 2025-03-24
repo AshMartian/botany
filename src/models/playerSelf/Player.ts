@@ -1,22 +1,24 @@
 import Body from '../сommon/Body';
 import Character from '@/models/сommon/character/Character';
 import Camera from '@/models/playerSelf/Camera';
-import store from '@/store/store';
-import storeVuex from '@/store/vuex';
+import { usePlayerStore } from '@/stores/playerStore';
+import { useAppStore } from '@/stores/appStore';
 import Controller from '@/models/playerSelf/Controller';
 import Move from './Move';
 
 class Player {
   init(callbackLoad: any) {
-    new Body(store.getSelfPlayerId());
+    new Body(usePlayerStore().selfPlayerId!);
 
-    const character = new Character(store.getSelfPlayerId());
+    const character = new Character(usePlayerStore().selfPlayerId!);
 
     character.load(() => {
       const camera = new Camera();
       globalThis.camera = camera;
 
-      if (!storeVuex.state.isMobile) {
+      const appStore = useAppStore();
+
+      if (!appStore.isMobile) {
         new Controller();
       }
 

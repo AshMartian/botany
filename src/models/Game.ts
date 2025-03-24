@@ -1,19 +1,18 @@
 import { Color3, Engine, Vector3, Scene as BabylonScene } from '@babylonjs/core';
-import PlayerSpawner from '@/models/player/PlayerSpawner';
-import SharedPlayerState from '@/models/player/SharedPlayerState';
+import { usePlayerStore } from '@/stores/playerStore';
+import { useInventoryStore } from '@/stores/inventoryStore';
+import PlayerSpawner from '@/models/playerOnline/PlayerSpawner';
+import SharedPlayerState from '@/models/playerOnline/SharedPlayerState';
 import WorldManager from '@/models/terrain/WorldManager';
 import GameScene from './scene/Scene';
-import store from '@/store/store';
-import storeVuex from '@/store/vuex';
 import Audio from '@/models/sounds/Audio';
 import ServerClient from './ServerClient';
 import PlayerSelf from '@/models/playerSelf/Player';
-import Player from '@/models/player/Player';
+// import Player from '@/models/player/Player';
 import { v4 as uuidv4 } from 'uuid';
 import RegisterTagsExtension from '@/models/scene/TagsExtansion';
 import Collisions from '@/models/mehanics/Collisions';
 import Canvas from '@/models/scene/Canvas';
-import Points from '@/models/mehanics/Points';
 import DevMode from '@/models/scene/DevMode';
 import BlendModes from '@/models/scene/BlendModes';
 import Materials from '@/models/scene/Materials';
@@ -38,11 +37,15 @@ export default class Game {
   init() {
     // Apply safety patch to collision system
     // safetyPatchCollisionSystem();
+    const store = usePlayerStore();
 
     const playerId = this.getPlayerId();
     const skinColor = Color3.Random();
     store.setPlayerId(playerId);
     store.addPlayer(playerId, skinColor);
+
+    const inventoryStore = useInventoryStore();
+    inventoryStore.initializeInventory(playerId);
 
     globalThis.assetContainers = [];
     const canvas = Canvas.setCanvas();
@@ -79,13 +82,17 @@ export default class Game {
       const spawnPosition = savedPosition || new Vector3(30, 0, 30);
 
       // Then initialize game classes and characters
-      await this.initializeGameComponents(spawnPosition, () => {
-        const serverClient = new ServerClient(playerId);
-        serverClient.init();
+      // await this.initializeGameComponents(spawnPosition, () => {
+      // const serverClient = new ServerClient(playerId);
+      // serverClient.init();
 
-        store.subscribeAddPlayer((playerId: string) => {
-          new Player(playerId);
-        });
+      // store.ad((playerId: string) => {
+      //   new Player(playerId);
+      // });
+      // });
+
+      this.initializeGameComponents(spawnPosition, () => {
+        // Nothing for now
       });
 
       // Add position sanitizer and terrain validation
@@ -113,8 +120,6 @@ export default class Game {
     );
 
     try {
-      await storeVuex.dispatch('inventory/initializeInventory');
-
       // Initialize terrain system first
       await window.terrainManager.initialize(spawnPosition);
 
@@ -146,8 +151,6 @@ export default class Game {
             BlendModes.init();
             OutLiner.init();
             new Doors();
-            new Points(store.getPlayerId() || '');
-            storeVuex.commit('LOADING_TOGGLE');
             resolve();
           });
         });
@@ -162,8 +165,6 @@ export default class Game {
           BlendModes.init();
           OutLiner.init();
           new Doors();
-          new Points(store.getPlayerId() || '');
-          storeVuex.commit('LOADING_TOGGLE');
           resolve();
         });
       });
@@ -200,8 +201,9 @@ export default class Game {
 
     // Save position every 5 seconds
     this.positionSaveInterval = window.setInterval(() => {
-      const playerId = store.getPlayerId();
-      const playerMesh = globalThis.scene.getMeshByName('playerFoot_' + playerId);
+      const store = usePlayerStore();
+      if (!store.selfPlayerId) return;
+      const playerMesh = globalThis.scene.getMeshByName('playerFoot_' + store.selfPlayerId);
 
       if (playerMesh) {
         // Save the virtual position only
@@ -231,9 +233,9 @@ export default class Game {
           if (window.terrainManager) {
             window.terrainManager.clearAllChunks();
 
-            // Get current player position
-            const playerId = store.getPlayerId();
-            const playerMesh = this.scene.getMeshByName('playerFoot_' + playerId);
+            const store = usePlayerStore();
+
+            const playerMesh = this.scene.getMeshByName('playerFoot_' + store.selfPlayerId);
 
             if (playerMesh) {
               const globalPos = WorldManager.toVirtual(playerMesh.position);

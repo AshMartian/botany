@@ -41,10 +41,11 @@
 
 <script lang="ts">
 import { defineComponent, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useStore } from 'vuex';
 import { IInventoryItem } from '@/models/inventory/InventoryItem';
 import Hotbar from './Hotbar.vue';
 import InventoryItem from './InventoryItem.vue';
+import { useInventoryStore, InventoryItemWithPosition } from '@/stores/inventoryStore';
+import { usePlayerStore } from '@/stores/playerStore';
 
 export default defineComponent({
   name: 'InventoryPanel',
@@ -55,13 +56,20 @@ export default defineComponent({
   },
 
   setup() {
-    const store = useStore();
-    const isOpen = computed(() => store.getters['inventory/isInventoryOpen']);
-    // Create a reactive reference for the inventory items
-    const inventoryItems = computed(() => store.getters['inventory/getInventoryItems']);
+    // Use Pinia stores instead of Vuex
+    const inventoryStore = useInventoryStore();
+    const playerStore = usePlayerStore();
 
+    // Get player ID from player store
+    const playerId = computed(() => playerStore.currentPlayerId || 'default');
+
+    // Use computed properties from Pinia store
+    const isOpen = computed(() => inventoryStore.isOpen);
+    const inventoryItems = computed(() => inventoryStore.inventoryItems);
+
+    // Get item at position using the store getter
     const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
-      return store.getters['inventory/getItemAtPosition'](type, index);
+      return inventoryStore.getItemAtPosition(type, index);
     };
 
     // Add keyboard event handling
@@ -81,6 +89,11 @@ export default defineComponent({
     // Add and remove event listeners
     onMounted(async () => {
       window.addEventListener('keydown', handleKeyDown, true);
+
+      // Initialize inventory when component mounts
+      if (playerId.value) {
+        await inventoryStore.initializeInventory(playerId.value);
+      }
     });
 
     onBeforeUnmount(() => {
@@ -97,18 +110,21 @@ export default defineComponent({
       } catch (error) {
         console.warn('Pointer lock request failed:', error);
       }
-      store.commit('inventory/SET_INVENTORY_OPEN', false);
+
+      // Use Pinia action instead of Vuex mutation
+      inventoryStore.toggleInventory();
     };
 
-    const useItem = (item: IInventoryItem & { stackId?: string }) => {
-      if (item?.use && item.stackId) {
-        store.dispatch('inventory/useItem', item.stackId);
+    const useItem = async (item: IInventoryItem & { stackId?: string }) => {
+      if (item?.stackId && playerId.value) {
+        // Use the useItem action from the store
+        await inventoryStore.useItem(playerId.value, item.stackId);
       }
     };
 
     const onDrop = async (event: DragEvent, index: number) => {
       event.preventDefault();
-      if (!event.dataTransfer) return;
+      if (!event.dataTransfer || !playerId.value) return;
 
       const stackId = event.dataTransfer.getData('stackId');
       if (!stackId) {
@@ -117,27 +133,26 @@ export default defineComponent({
       }
 
       try {
-        // Move the item to the new position in the inventory
-        await store.dispatch('inventory/moveItem', {
-          stackId,
-          newPosition: {
-            type: 'inventory',
-            index: index,
-          },
+        // Move the item to the new position in the inventory using Pinia action
+        await inventoryStore.moveItem(playerId.value, stackId, {
+          type: 'inventory',
+          index: index,
         });
       } catch (error) {
         console.error('Error moving item:', error);
         // If there was an error, force a refresh anyway
-        store.dispatch('inventory/forceRefreshInventory');
+        if (playerId.value) {
+          await inventoryStore.forceRefreshInventory(playerId.value);
+        }
       }
     };
 
-    const onInventorySlotClick = (
-      item: (IInventoryItem & { stackId?: string }) | null,
+    const onInventorySlotClick = async (
+      item: InventoryItemWithPosition | undefined,
       event: MouseEvent
     ) => {
-      if (!item) return;
-      // console.log('Item clicked:', item, event);
+      if (!item || !playerId.value) return;
+
       // Handle shift-click for stack splitting
       if ((event.shiftKey || event.ctrlKey) && item.stackable && item.quantity > 1) {
         // Split the stack
@@ -154,19 +169,18 @@ export default defineComponent({
 
         if (emptySlotIndex < 27) {
           // Update original stack quantity
-          store.dispatch('inventory/updateItemQuantity', {
-            stackId: item.stackId,
-            quantity: remainingQuantity,
-          });
+          if (item.stackId) {
+            await inventoryStore.updateItemQuantity(
+              playerId.value,
+              item.stackId,
+              remainingQuantity
+            );
+          }
 
           // Create new stack with split quantity
-          store.dispatch('inventory/addSplitStack', {
-            originalItem: item,
-            quantity: newQuantity,
-            position: {
-              type: 'inventory',
-              index: emptySlotIndex,
-            },
+          await inventoryStore.addSplitStack(playerId.value, item, newQuantity, {
+            type: 'inventory',
+            index: emptySlotIndex,
           });
         } else {
           console.warn('No empty slots available for split stack');
@@ -175,7 +189,17 @@ export default defineComponent({
       }
 
       // Regular item use if not splitting
-      store.dispatch('inventory/useItem', item.stackId);
+      if (item.stackId) {
+        // Check if the item has a use function in its class
+        try {
+          // If the item's use function returns false or doesn't exist, use the default behavior
+          await inventoryStore.useItem(playerId.value, item.stackId);
+        } catch (error) {
+          console.error('Error using item:', error);
+          // Fallback to default use behavior
+          await inventoryStore.useItem(playerId.value, item.stackId);
+        }
+      }
     };
 
     return {

@@ -3,86 +3,113 @@
     <div>
       <div class="tabs_container">
         <ul class="tabs">
-          <li :class="{ active: isCreate }">
-            <a @click="toggleIsCreate">Create</a>
+          <li :class="{ active: isCreate }" @click="toggleIsCreate">
+            {{ $t('message.create_a_game') }}
           </li>
-          <li :class="{ active: isJoin }">
-            <a @click="toggleIsJoin">Connect</a>
+          <li :class="{ active: isJoin }" @click="toggleIsJoin">
+            {{ $t('message.join_a_game') }}
           </li>
         </ul>
-
-        <div class="tabs_content">
-          <div v-if="isCreate">
-            <div>
-              <div class="label">send to friends</div>
-              {{ this.password }} <button @click="copyPassword">copy</button>
-            </div>
-          </div>
-
-          <div v-if="isJoin">
-            <div>
-              <div class="label">type password</div>
-              <input
-                type="text"
-                placeholder="password"
-                v-model="passwordFriend"
-                :maxlength="lengthPassword"
-              />
+      </div>
+      <div class="box_forms">
+        <div v-if="isCreate" class="box_form">
+          <div class="input_label">{{ $t('message.password') }}</div>
+          <div class="input_box">
+            <div class="input_value">{{ password }}</div>
+            <div @click="copyPassword" class="input_action copy">
+              {{ $t('message.copy') }}
             </div>
           </div>
         </div>
+        <div v-if="isJoin" class="box_form">
+          <div class="input_label">{{ $t('message.password') }}</div>
+          <div class="input_box">
+            <input
+              type="text"
+              v-model="passwordFriend"
+              :placeholder="$t('message.enter_password')"
+            />
+          </div>
+        </div>
       </div>
-
-      <div v-if="!isJoin || (isJoin && passwordFriend && passwordFriend.length === lengthPassword)">
-        <div class="button" @click="play">{{ $t('message.play') }}</div>
-      </div>
-
-      <div class="back_container">
-        <div class="back" @click="back()">back</div>
+      <div class="line_form">
+        <div @click="goToMainPage" class="button secondary">
+          {{ $t('message.back') }}
+        </div>
+        <div @click="play" class="button primary">{{ $t('message.play') }}</div>
       </div>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent } from 'vue';
+import { defineComponent, ref } from 'vue';
+import copy from 'copy-to-clipboard';
 import '../styles/play_with_friends_page.sass';
-import { Helpers } from '@/models/Helpers';
-import copy from 'copy-text-to-clipboard';
+import { useAppStore } from '@/stores/appStore';
 
 export default defineComponent({
-  methods: {
-    back() {
-      this.$store.commit('SET_PAGE', 'MainPage');
-    },
-    toggleIsCreate() {
-      this.isCreate = true;
-      this.isJoin = false;
-    },
-    toggleIsJoin() {
-      this.isCreate = false;
-      this.isJoin = true;
-    },
-    copyPassword() {
-      copy(this.password);
-    },
-    play() {
-      if (this.isCreate) {
-        this.$store.commit('SET_PASSWORD', this.password);
-      } else {
-        this.$store.commit('SET_PASSWORD', this.passwordFriend);
-      }
+  setup() {
+    // Use Pinia app store instead of Vuex
+    const appStore = useAppStore();
 
-      this.$store.commit('SET_PAGE', 'LevelsPage');
-    },
-  },
-  data() {
+    // Component state
+    const isCreate = ref(true);
+    const isJoin = ref(false);
+    const password = ref(generatePassword()); // Generate random password on load
+    const passwordFriend = ref('');
+
+    // Generate a random password
+    function generatePassword(): string {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let result = '';
+      for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    }
+
+    // Toggle between create and join modes
+    const toggleIsCreate = () => {
+      isCreate.value = true;
+      isJoin.value = false;
+    };
+
+    const toggleIsJoin = () => {
+      isCreate.value = false;
+      isJoin.value = true;
+    };
+
+    // Copy password to clipboard
+    const copyPassword = () => {
+      copy(password.value);
+    };
+
+    // Navigate back to main page
+    const goToMainPage = () => {
+      appStore.goToMainPage();
+    };
+
+    // Start playing with friends
+    const play = () => {
+      // Use a different level ID for multiplayer to distinguish it from single player
+      const levelId = isCreate.value
+        ? `multiplayer-host-${password.value}`
+        : `multiplayer-client-${passwordFriend.value}`;
+
+      appStore.goToLevelPage(levelId);
+    };
+
     return {
-      lengthPassword: 11,
-      isCreate: true,
-      isJoin: false,
-      password: Helpers.generateRandomToken(10),
-      passwordFriend: null,
+      isCreate,
+      isJoin,
+      password,
+      passwordFriend,
+      toggleIsCreate,
+      toggleIsJoin,
+      copyPassword,
+      goToMainPage,
+      play,
     };
   },
 });

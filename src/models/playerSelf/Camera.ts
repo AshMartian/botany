@@ -8,9 +8,8 @@ import {
   Axis,
   Scalar,
 } from '@babylonjs/core';
-import store from '@/store/store';
-import storeVuex from '@/store/vuex';
-import { Player } from '@/store/types';
+import { usePlayerStore, Player } from '@/stores/playerStore';
+import { useInventoryStore } from '@/stores/inventoryStore';
 import { Helpers } from '@/models/Helpers';
 
 interface CalculateDistance {
@@ -42,9 +41,12 @@ export default class Camera {
   constructor() {
     this.scene = globalThis.scene;
     this.babylonCamera = new UniversalCamera('playerCamera', Vector3.Zero(), this.scene);
-    this.meshHead = this.scene.getMeshById('playerHead_' + store.getSelfPlayerId()) as AbstractMesh;
+
+    const store = usePlayerStore();
+
+    this.meshHead = this.scene.getMeshById('playerHead_' + store.selfPlayerId) as AbstractMesh;
     this.actualDistance = -MAX_DIST_CAMERA_Z;
-    this.player = store.getSelfPlayer();
+    this.player = store.selfPlayer!;
 
     this.calculateDistance = {
       amount: 0,
@@ -70,8 +72,9 @@ export default class Camera {
     if (!canvas) return;
 
     canvas.addEventListener('wheel', (event) => {
+      const inventoryStore = useInventoryStore();
       // Only handle zoom if inventory is not open
-      const inventoryOpen = storeVuex.getters['inventory/isInventoryOpen'] || false;
+      const inventoryOpen = inventoryStore.isOpen || false;
       if (inventoryOpen) return;
 
       // Prevent default scroll behavior

@@ -1,17 +1,12 @@
-import store from '@/store/store';
+import { usePlayerStore, Forward } from '@/stores/playerStore';
 import { JoystickManagerOptions } from 'nipplejs';
 import { isEqual } from 'lodash';
-import { Forward, Player } from '@/store/types';
 
 export default class ControllerJoystick {
   lastEventMove: string;
-  playerId: string;
-  player: Player;
 
   constructor() {
     this.lastEventMove = '';
-    this.playerId = store.getSelfPlayerId();
-    this.player = store.getSelfPlayer();
 
     this.setRotate();
   }
@@ -19,11 +14,13 @@ export default class ControllerJoystick {
   setForward(nippleData: any) {
     const distance = nippleData.distance;
 
-    const oldForward = store.getSelfPlayer().move.forward;
+    const store = usePlayerStore();
+
+    const oldForward = store.selfPlayer?.move.forward;
     const direction = this.getDirection(nippleData.angle.degree);
 
     // Preserve the sprint state from keyboard if it exists
-    const currentSprint = oldForward.sprint;
+    const currentSprint = oldForward?.sprint || false;
 
     const forward: Forward = {
       right: direction.right,
@@ -31,20 +28,22 @@ export default class ControllerJoystick {
       left: direction.left,
       back: direction.back,
       // Use joystick distance for sprint on mobile, but don't override keyboard sprint
-      sprint: currentSprint || distance > 40,
-      isMoving: false,
+      sprint: currentSprint || (distance > 40 && !oldForward?.isMoving),
+      isMoving: distance > 10,
     };
 
-    if (!isEqual(forward, oldForward)) {
-      store.setForward(this.playerId, forward);
+    if (!isEqual(forward, oldForward) && store.selfPlayerId) {
+      store.setForward(store.selfPlayerId, forward);
     }
   }
 
   moveEnd() {
+    const store = usePlayerStore();
+    if (!store.selfPlayerId) return;
     // Get current sprint state from keyboard if it exists
-    const currentSprint = store.getSelfPlayer().move.forward.sprint;
+    const currentSprint = store.selfPlayer?.move.forward.sprint || false;
 
-    store.setForward(this.playerId, {
+    store.setForward(store.selfPlayerId, {
       left: false,
       right: false,
       back: false,
@@ -81,12 +80,16 @@ export default class ControllerJoystick {
 
     jumpButton.addEventListener('touchstart', () => {
       jumpButton.classList.add('active');
-      store.setJump(this.playerId, true);
+      const store = usePlayerStore();
+      if (!store.selfPlayerId) return;
+      store.setJump(store.selfPlayerId, true);
     });
 
     jumpButton.addEventListener('touchend', () => {
       jumpButton.classList.remove('active');
-      store.setJump(this.playerId, false);
+      const store = usePlayerStore();
+      if (!store.selfPlayerId) return;
+      store.setJump(store.selfPlayerId, false);
     });
   }
 
@@ -127,7 +130,10 @@ export default class ControllerJoystick {
       const movementX = currentTouchX - previousTouchX;
       const movementY = currentTouchY - previousTouchY;
 
-      store.setRotate(this.playerId, movementY / 50, movementX / 80);
+      const store = usePlayerStore();
+      if (!store.selfPlayerId) return;
+
+      store.setRotate(store.selfPlayerId, movementY / 50, movementX / 80);
 
       previousTouchX = currentTouchX;
       previousTouchY = currentTouchY;

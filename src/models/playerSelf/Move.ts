@@ -1,9 +1,9 @@
 import MoveCommon from '../сommon/Move';
-import store from '@/store/store';
+import { usePlayerStore } from '@/stores/playerStore';
 
 export default class Move extends MoveCommon {
   static instance: Move;
   constructor() {
-    super(store.getSelfPlayerId());
+    super(usePlayerStore().selfPlayerId!);
   }
 }

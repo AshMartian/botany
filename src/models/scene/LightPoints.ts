@@ -1,5 +1,5 @@
 import { PointLight, Scene, Vector3, Animation, AbstractMesh } from '@babylonjs/core';
-import store from '@/store/store';
+import { usePlayerStore } from '@/stores/playerStore';
 import { Helpers } from '@/models/Helpers';
 
 interface CustomPointLight extends PointLight {
@@ -17,7 +17,11 @@ export default class LightPoints {
   collectManagerLight: Array<any>;
 
   constructor() {
-    this.meshFoot = globalThis.scene.getMeshById('playerFoot_' + store.getSelfPlayer().id);
+    const store = usePlayerStore();
+    if (!store.selfPlayer) {
+      throw 'Player not found in store';
+    }
+    this.meshFoot = globalThis.scene.getMeshById('playerFoot_' + store.selfPlayer.id);
     this.scene = globalThis.scene;
     this.intensity = 300;
     this.radius = 15;
