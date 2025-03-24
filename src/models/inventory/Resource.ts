@@ -22,6 +22,7 @@ export class Resource extends InventoryItem {
       stackable: true,
       maxStackSize: 999,
       type: 'resource',
+      consumable: false,
     }
   ) {
     super(props);
@@ -32,10 +33,6 @@ export class Resource extends InventoryItem {
     return '#ffffff'; // Default white color
   }
 
-  // Method to get the description - can be overridden by subclasses
-  public getDescription(): string {
-    return `This is a ${this.name}.`; // Default description
-  }
   // Method to get the category - can be overridden by subclasses
   public getCategory(): string {
     return 'Resources'; // Default category for resources

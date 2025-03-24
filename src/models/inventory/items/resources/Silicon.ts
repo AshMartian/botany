@@ -10,6 +10,7 @@ export class Silicon extends Resource implements InventoryItemDefinition {
       stackable: true,
       maxStackSize: 999,
       type: 'mineral',
+      consumable: false,
     });
   }
 

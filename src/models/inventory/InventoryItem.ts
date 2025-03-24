@@ -30,7 +30,6 @@ export interface IInventoryItem {
   consumable?: boolean;
   stackable: boolean;
   maxStackSize: number;
-  description?: string;
 }
 
 export class InventoryItem implements IInventoryItem {
@@ -50,7 +49,7 @@ export class InventoryItem implements IInventoryItem {
     this.stackable = definition.stackable;
     this.maxStackSize = definition.maxStackSize;
     this.quantity = Math.max(0, definition.quantity);
-    this.description = definition.description || '';
+    this.consumable = definition.consumable || false;
   }
 
   /**
@@ -73,7 +72,6 @@ export class InventoryItem implements IInventoryItem {
       stackable: this.stackable,
       maxStackSize: this.maxStackSize,
       quantity: this.quantity,
-      description: this.description,
     });
   }
 
@@ -88,7 +86,6 @@ export class InventoryItem implements IInventoryItem {
       quantity: this.quantity,
       stackable: this.stackable,
       maxStackSize: this.maxStackSize,
-      description: this.description,
     };
   }
 
@@ -125,5 +122,10 @@ export class InventoryItem implements IInventoryItem {
 
     this.quantity = Math.max(0, this.quantity - amount);
     return this.quantity <= 0;
+  }
+
+  // Method to get the description - can be overridden by subclasses
+  public getDescription(): string {
+    return `This is a ${this.name}.`; // Default description
   }
 }

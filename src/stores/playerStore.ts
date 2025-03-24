@@ -42,6 +42,7 @@ export interface Player {
   character: string;
   skinColor: Color3;
   points: number;
+  equippedToolId?: string; // New field to track equipped tool
 }
 
 // Game settings
@@ -80,6 +81,7 @@ const defaultPlayerTemplate: Player = {
   character: 'SpaceGirl.glb',
   skinColor: Color3.Random(),
   points: 0,
+  equippedToolId: undefined, // No tool equipped by default
   move: {
     forward: {
       front: false,
@@ -144,6 +146,12 @@ export const usePlayerStore = defineStore('player', {
 
     // Get player interaction
     playerInteraction: (state) => state.interaction,
+
+    // Get equipped tool ID for a player
+    getEquippedToolId: (state) => (playerId: string) => {
+      const player = state.players.find((player) => player.id === playerId);
+      return player?.equippedToolId;
+    },
   },
 
   actions: {
@@ -390,6 +398,52 @@ export const usePlayerStore = defineStore('player', {
         }
       }
       return this.globalPosition;
+    },
+
+    // Tool management methods
+
+    /**
+     * Set the equipped tool for a player
+     * @param playerId The ID of the player
+     * @param toolId The ID of the tool to equip
+     */
+    setEquippedTool(playerId: string, toolId: string | undefined) {
+      const player = this.getPlayer(playerId);
+      if (player) {
+        // Only update if different
+        if (player.equippedToolId !== toolId) {
+          player.equippedToolId = toolId;
+          this.notifySubscribers(playerId, 'equippedTool', toolId);
+        }
+      }
+    },
+
+    /**
+     * Unequip the current tool from a player
+     * @param playerId The ID of the player
+     */
+    unequipTool(playerId: string) {
+      this.setEquippedTool(playerId, undefined);
+    },
+
+    /**
+     * Use the currently equipped tool
+     * @param playerId The ID of the player
+     */
+    useEquippedTool(playerId: string) {
+      const player = this.getPlayer(playerId);
+      const toolId = player?.equippedToolId;
+
+      if (toolId) {
+        const inventoryStore = useInventoryStore();
+        // Find the tool in inventory
+        const items = inventoryStore.allItems;
+        const toolStack = items.find((item) => item.id === toolId);
+
+        if (toolStack) {
+          inventoryStore.useItem(playerId, toolStack.stackId);
+        }
+      }
     },
 
     // Inventory integration methods

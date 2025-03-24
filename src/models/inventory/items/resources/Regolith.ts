@@ -10,6 +10,7 @@ export class Regolith extends Resource implements InventoryItemDefinition {
       stackable: true,
       maxStackSize: 20,
       type: 'mineral',
+      consumable: false,
     });
   }
 

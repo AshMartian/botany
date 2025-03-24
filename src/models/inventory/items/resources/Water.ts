@@ -10,6 +10,7 @@ export class Water extends Resource implements InventoryItemDefinition {
       type: 'liquid',
       maxStackSize: 20,
       stackable: true,
+      consumable: true,
     });
   }
 

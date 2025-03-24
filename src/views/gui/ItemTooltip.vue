@@ -57,6 +57,7 @@ export default defineComponent({
   setup(props) {
     const inventoryStore = useInventoryStore();
     const position = computed(() => {
+      // Return previous position top/left if item is not hovered
       if (!props.targetRect) return {};
 
       if (props.isHotbarItem) {
@@ -104,7 +105,10 @@ export default defineComponent({
   pointer-events: none;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: opacity 0.2s ease-out;
+  transition:
+    opacity,
+    top,
+    left 0.2s ease-out;
   opacity: 0;
 }
 
