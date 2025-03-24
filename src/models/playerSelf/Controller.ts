@@ -2,6 +2,7 @@ import { Scene, KeyboardEventTypes } from '@babylonjs/core';
 import store from '@/store/store';
 import storeVuex from '@/store/vuex';
 import { Player } from '@/store/types';
+import { InventoryItemWithPosition } from '@/store/vuex/inventory';
 
 export default class Controller {
   sensitiveMouse: number;
@@ -91,16 +92,14 @@ export default class Controller {
         storeVuex.commit('hotbar/SET_ACTIVE_SLOT', slotIndex);
 
         // Get the item in the selected slot
-        const slots = storeVuex.getters['hotbar/getAllSlots'];
-        const selectedSlot = slots.find((s: any) => s.slotIndex === slotIndex);
+        const slots = storeVuex.getters['inventory/getHotbarItems'];
+        const selectedSlot = slots[slotIndex] as InventoryItemWithPosition;
 
-        if (selectedSlot && selectedSlot.itemId) {
+        if (selectedSlot && selectedSlot.stackId) {
           // If there's an item in the slot, use it
-          const item = storeVuex.getters['inventory/getItemById'](selectedSlot.itemId);
-          if (item && item.use) {
-            console.log(`Using item from hotbar: ${item.name}`);
-            // You could add visual feedback here
-          }
+          storeVuex.dispatch('inventory/useItem', selectedSlot.stackId);
+        } else {
+          console.log(`No item in hotbar slot ${slotIndex}`, selectedSlot, slots);
         }
       }
     }

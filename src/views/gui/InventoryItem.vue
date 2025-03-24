@@ -103,6 +103,7 @@ export default defineComponent({
   padding: 5px;
   position: relative;
   border-radius: 5px;
+  user-select: none;
 }
 
 .item-icon {
@@ -111,6 +112,14 @@ export default defineComponent({
   object-fit: contain;
   border-radius: 5px;
   overflow: hidden;
+  user-select: none;
+  &:hover {
+    filter: brightness(1.2);
+    transform: scale(1.05);
+  }
+  transition:
+    all 0.2s ease,
+    filter 0.2s ease;
 }
 
 .item-quantity {
@@ -122,6 +131,7 @@ export default defineComponent({
   border-radius: 3px;
   font-size: 12px;
   color: white;
+  pointer-events: none;
 }
 
 .item-tooltip {
@@ -139,6 +149,7 @@ export default defineComponent({
   opacity: 0;
   transition: opacity 0.2s ease;
   z-index: 101;
+  pointer-events: none;
 }
 
 .item-container:hover .item-tooltip {
@@ -183,10 +194,5 @@ export default defineComponent({
 /* Specific styling for hotbar items */
 .hotbar-item {
   max-width: 100%;
-}
-
-/* Remove the drag-preview style since we're handling it in JS */
-.drag-preview {
-  display: none;
 }
 </style>

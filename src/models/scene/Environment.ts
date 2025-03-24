@@ -32,7 +32,7 @@ export default class Environment {
   }
 
   setupHDR() {
-    const url = process.env.VUE_APP_RESOURCES_PATH + 'graphics/textures/environment.env';
+    const url = import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/textures/environment.env';
     const hdrTexture = CubeTexture.CreateFromPrefilteredData(url, this.scene);
     const hdrRotation = this.settings.hdr.rotation;
 

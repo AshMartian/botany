@@ -1,4 +1,4 @@
-import { InventoryItem } from './InventoryItem';
+import { InventoryItem, IInventoryItem } from './InventoryItem';
 
 export enum ResourceRarity {
   Common = 'Common',
@@ -8,17 +8,23 @@ export enum ResourceRarity {
   Legendary = 'Legendary',
 }
 
+export interface ResourceItem extends IInventoryItem {
+  type?: string; // Type of resource
+}
+
 export class Resource extends InventoryItem {
   constructor(
-    quantity = 1,
-    id: string,
-    name: string,
-    iconPath = '',
-    stackable = true,
-    maxStackSize = 999, // Resources typically have larger stack sizes
-    type = 'resource' // Default type for resources
+    props: ResourceItem = {
+      quantity: 1,
+      id: 'resource-unknown',
+      name: 'unknown',
+      iconPath: '',
+      stackable: true,
+      maxStackSize: 999,
+      type: 'resource',
+    }
   ) {
-    super(id, name, iconPath, stackable, maxStackSize, quantity, type);
+    super(props);
   }
 
   // Method to get color - can be overridden by subclasses

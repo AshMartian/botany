@@ -175,9 +175,7 @@ export default defineComponent({
       }
 
       // Regular item use if not splitting
-      if (item.use && item.stackId) {
-        store.dispatch('inventory/useItem', item.stackId);
-      }
+      store.dispatch('inventory/useItem', item.stackId);
     };
 
     return {

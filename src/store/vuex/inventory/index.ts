@@ -5,7 +5,7 @@ import { IInventoryItem } from '@/models/inventory/InventoryItem';
 import store from '@/store/store';
 import { openDB } from 'idb';
 import { playerInventory } from '@/services/PlayerInventory';
-import { generateUUID } from '@/utils/uuid';
+import { v4 as generateUUID } from 'uuid';
 
 const DB_NAME = 'game-inventory';
 const DB_VERSION = 2; // Incrementing version to handle schema changes
@@ -231,7 +231,12 @@ export const inventory: Module<InventoryState, RootState> = {
         const targetItem = state.items[targetIndex];
 
         // If items are the same type and stackable
-        if (targetItem.id === sourceItem.id && sourceItem.stackable && targetItem.stackable) {
+        if (
+          targetItem.id === sourceItem.id &&
+          sourceItem.stackable &&
+          targetItem.stackable &&
+          targetItem.stackId !== sourceItem.stackId
+        ) {
           const totalQuantity = targetItem.quantity + sourceItem.quantity;
 
           if (totalQuantity <= targetItem.maxStackSize) {
@@ -359,19 +364,9 @@ export const inventory: Module<InventoryState, RootState> = {
       commit('TOGGLE_INVENTORY');
     },
 
-    useItem({ state, commit }, stackId: string) {
-      const item = state.items.find((item) => item.stackId === stackId);
-      if (item && item.use) {
-        item.use();
-
-        // If the item is consumed on use, reduce its quantity by 1
-        if (item.stackable) {
-          commit('UPDATE_ITEM_QUANTITY', {
-            stackId: item.stackId,
-            quantity: item.quantity - 1,
-          });
-        }
-      }
+    useItem({}, stackId: string) {
+      const playerId = store.getSelfPlayerId();
+      playerInventory.usePlayerItem(playerId, stackId);
     },
 
     moveItem(

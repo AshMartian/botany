@@ -224,7 +224,7 @@ export default class Game {
   private setupDebugKeys(): void {
     window.addEventListener('keydown', (e) => {
       // Only in development
-      if (process.env.NODE_ENV !== 'production') {
+      if (import.meta.env.NODE_ENV !== 'production') {
         // Alt+R: Reset terrain system (emergency recovery)
         if (e.key === 'r' && e.altKey) {
           console.warn('🚨 EMERGENCY TERRAIN RESET 🚨');

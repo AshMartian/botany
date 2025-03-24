@@ -38,7 +38,7 @@ export default class Prefabs {
 
     for (const prefab of this.prefabs) {
       const nameModel = `Prefab_${prefab.id.replace(/\.[^/.]+$/, '')}.gltf`;
-      const path = `${process.env.VUE_APP_RESOURCES_PATH}graphics/prefabs/`;
+      const path = `${import.meta.env.VUE_APP_RESOURCES_PATH}graphics/prefabs/`;
 
       try {
         const container = await ContainerManager.getContainer(nameModel, path);

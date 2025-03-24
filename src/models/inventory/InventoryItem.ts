@@ -1,25 +1,57 @@
+// Define an interface to use in the constructor method and for serialization
+
 // Define the interface for inventory items
+export class InventoryItemDefinition {
+  public id: string;
+  public name: string;
+  public iconPath: string;
+  public stackable: boolean;
+  public maxStackSize: number;
+  public quantity: number;
+  public description: string;
+  public consumable: boolean;
+  constructor(quantity: number) {
+    this.id = '';
+    this.name = '';
+    this.iconPath = '/resources/graphics/textures/items/unknown.jpg';
+    this.stackable = false;
+    this.maxStackSize = 1;
+    this.quantity = Math.max(0, quantity);
+    this.description = '';
+    this.consumable = false;
+  }
+}
+
 export interface IInventoryItem {
   id: string;
   name: string;
   iconPath: string;
   quantity: number;
+  consumable?: boolean;
   stackable: boolean;
   maxStackSize: number;
-  use?: () => void;
   description?: string;
 }
 
 export class InventoryItem implements IInventoryItem {
-  constructor(
-    public id: string,
-    public name: string,
-    public iconPath: string = '/resources/graphics/textures/items/unknown.jpg',
-    public stackable: boolean = false,
-    public maxStackSize: number = 1,
-    public quantity: number = 1,
-    public description: string = ''
-  ) {}
+  public id: string;
+  public name: string;
+  public iconPath = '/resources/graphics/textures/items/unknown.jpg';
+  public stackable = false;
+  public maxStackSize = 1;
+  public quantity = 1;
+  public description = '';
+  public consumable = false;
+
+  constructor(definition: IInventoryItem) {
+    this.id = definition.id;
+    this.name = definition.name;
+    this.iconPath = definition.iconPath;
+    this.stackable = definition.stackable;
+    this.maxStackSize = definition.maxStackSize;
+    this.quantity = Math.max(0, definition.quantity);
+    this.description = definition.description || '';
+  }
 
   /**
    * Default use method - can be overridden by subclasses
@@ -34,15 +66,15 @@ export class InventoryItem implements IInventoryItem {
    * Clone the item
    */
   public clone(): InventoryItem {
-    return new InventoryItem(
-      this.id,
-      this.name,
-      this.iconPath,
-      this.stackable,
-      this.maxStackSize,
-      this.quantity,
-      this.description
-    );
+    return new InventoryItem({
+      id: this.id,
+      name: this.name,
+      iconPath: this.iconPath,
+      stackable: this.stackable,
+      maxStackSize: this.maxStackSize,
+      quantity: this.quantity,
+      description: this.description,
+    });
   }
 
   /**

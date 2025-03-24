@@ -1,13 +1,16 @@
-import { Resource } from '../../../inventory/Resource';
+import { Resource, InventoryItemDefinition } from '@/models/inventory';
 
-export class Regolith extends Resource {
-  constructor(
-    quantity = 1,
-    id = 'regolith',
-    name = 'Regolith',
-    iconPath = '/resources/graphics/textures/items/regolith.jpg'
-  ) {
-    super(quantity, id, name, iconPath, true, 20);
+export class Regolith extends Resource implements InventoryItemDefinition {
+  constructor(quantity = 1) {
+    super({
+      quantity,
+      id: 'regolith',
+      name: 'Regolith',
+      iconPath: '/resources/graphics/textures/items/regolith.jpg',
+      stackable: true,
+      maxStackSize: 20,
+      type: 'mineral',
+    });
   }
 
   public override getColor(): string {

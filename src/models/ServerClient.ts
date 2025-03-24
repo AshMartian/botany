@@ -18,7 +18,7 @@ export default class ServerClient {
   }
 
   init() {
-    const client = new Colyseus.Client(process.env.VUE_APP_SERVER_DOMAIN);
+    const client = new Colyseus.Client(import.meta.env.VUE_APP_SERVER_DOMAIN);
     const levelId = storeVuex.state.levelId;
     const password = storeVuex.state.password;
 

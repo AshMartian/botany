@@ -1,5 +1,9 @@
 <template>
-  <div class="hotbar-container" :class="{ 'inventory-mode': inInventory }">
+  <div
+    class="hotbar-container"
+    data-testid="hotbar-component"
+    :class="{ 'inventory-mode': inInventory }"
+  >
     <div
       v-for="slotIndex in 9"
       :key="'hotbar-' + (slotIndex - 1)"
@@ -56,8 +60,10 @@ export default defineComponent({
     const selectSlot = (slotIndex: number, event: MouseEvent) => {
       // Handle shift-click for stack splitting
       const item = getItemAtPosition('hotbar', slotIndex);
-      if (event.shiftKey && item?.stackable && item.quantity > 1) {
-        const newQuantity = Math.floor(item.quantity / 2);
+      if ((event.shiftKey || event.ctrlKey) && item?.stackable && item.quantity > 1) {
+        // Split the stack
+
+        const newQuantity = event.shiftKey ? Math.floor(item.quantity / 2) : 1;
         const remainingQuantity = item.quantity - newQuantity;
 
         // Find first empty inventory slot
@@ -216,5 +222,6 @@ export default defineComponent({
   font-size: 10px;
   opacity: 0.7;
   color: white;
+  pointer-events: none;
 }
 </style>

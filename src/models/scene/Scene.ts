@@ -83,7 +83,7 @@ export default class GameScene {
     } else {
       const fileName = 'map.babylon';
       const filePath =
-        process.env.VUE_APP_RESOURCES_PATH + 'graphics/level_' + storeVuex.state.levelId + '/';
+        import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/level_' + storeVuex.state.levelId + '/';
 
       const timestamp = 1;
       const filePathWithTimestamp = fileName + '?timestamp=' + timestamp;

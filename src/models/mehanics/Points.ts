@@ -7,7 +7,7 @@ export default class Points {
   playerId: string;
   particleSystem?: ParticleSystem;
   particleLifeTime: number;
-  removePointIntervalId?: number;
+  removePointIntervalId?: ReturnType<typeof setInterval>;
 
   constructor(playerId: string) {
     this.meshFoot = globalThis.scene.getMeshById('playerFoot_' + playerId) as Mesh;

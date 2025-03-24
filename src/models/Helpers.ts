@@ -118,7 +118,7 @@ export const Helpers = {
 
     try {
       const response = await axios.get(
-        process.env.VUE_APP_RESOURCES_PATH + 'graphics/manifest.json'
+        import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/manifest.json'
       );
       const manifest = response.data;
       return manifest[filePathLastFolder] ?? new Date().getTime();

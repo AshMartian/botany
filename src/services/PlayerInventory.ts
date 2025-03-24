@@ -2,9 +2,9 @@
 import { openDB } from 'idb';
 import store from '../store/store';
 import storeVuex from '@/store/vuex';
-import { IInventoryItem } from '@/models/inventory/InventoryItem';
+import { IInventoryItem, InventoryItem } from '@/models/inventory/InventoryItem';
 import * as items from '@/models/inventory/items';
-import { generateUUID } from '@/utils/uuid';
+import { v4 as generateUUID } from 'uuid';
 
 const DB_NAME = 'game-inventory';
 const DB_VERSION = 2;
@@ -112,18 +112,28 @@ class PlayerInventoryService {
     return this.playerItems[playerId];
   }
 
-  private createItemFromId(id: string, quantity: number): IInventoryItem | null {
+  private createItemClassFromId(id: string, quantity: number) {
     // Implement logic to create an item instance based on the id
     // This is a placeholder implementation
     const itemClasses = items;
     for (const ItemClass of Object.values(itemClasses)) {
       const item = new ItemClass(quantity);
       if (item.id === id) {
-        return item.serialize();
+        return item;
       }
     }
     console.warn(`Item with ID ${id} not found`);
     return null;
+  }
+
+  private createItemFromId(id: string, quantity: number): IInventoryItem | null {
+    // Implement logic to create an item instance based on the id
+    // This is a placeholder implementation
+    const itemClass = this.createItemClassFromId(id, quantity);
+    if (!itemClass) {
+      return null;
+    }
+    return itemClass.serialize();
   }
 
   /**
@@ -237,26 +247,33 @@ class PlayerInventoryService {
    * @param playerId The unique ID of the player
    * @param itemId The ID of the item to use
    */
-  public usePlayerItem(playerId: string, itemId: string): void {
+  public usePlayerItem(playerId: string, stackId: string): void {
+    console.log('Using item with stackId:', stackId, playerId);
     if (!this.playerItems[playerId]) {
+      console.warn(`Player ${playerId} does not have an inventory`, this.playerItems);
       return;
     }
 
-    const item = this.playerItems[playerId].find((item) => item.id === itemId);
-    if (item && typeof item.use === 'function') {
-      item.use();
+    const item = this.playerItems[playerId].find((item) => item.stackId === stackId);
+    if (item) {
+      const ItemClass = this.createItemClassFromId(item.id, item.quantity);
+      if (ItemClass && ItemClass.use) {
+        ItemClass?.use();
 
-      // If the item is consumed on use, reduce its quantity
-      if (item.stackable) {
-        item.quantity -= 1;
+        // If the item is consumed on use, reduce its quantity
+        if (item.stackable) {
+          item.quantity -= 1;
 
-        // Remove the item if its quantity reaches 0
-        if (item.quantity <= 0) {
-          this.playerItems[playerId] = this.playerItems[playerId].filter((i) => i !== item);
+          // Remove the item if its quantity reaches 0
+          if (item.quantity <= 0) {
+            this.playerItems[playerId] = this.playerItems[playerId].filter((i) => i !== item);
+          }
+
+          this.notifyInventoryUpdate(playerId);
         }
-
-        this.notifyInventoryUpdate(playerId);
       }
+    } else {
+      console.warn(`Item with stackId ${stackId} not found in inventory`);
     }
   }
 

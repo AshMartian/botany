@@ -54,7 +54,7 @@ export default class Character {
   }
 
   load(callback: any) {
-    const path = process.env.VUE_APP_RESOURCES_PATH + 'graphics/characters/';
+    const path = import.meta.env.VUE_APP_RESOURCES_PATH + 'graphics/characters/';
 
     const player = store.getPlayer(this.playerId);
     const assetContainer = ContainerManager.getContainer(player.character, path);
