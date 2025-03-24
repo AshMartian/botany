@@ -24,13 +24,13 @@
       </button>
     </div>
 
-    <div class="item-tooltip" :class="{ visible: isDragging }">
+    <div class="item-tooltip" :class="[{ visible: isDragging }, rarity?.toLowerCase()]">
       <div class="tooltip-header">
         <span class="tooltip-title">{{ item.name }}</span>
-        <!-- <span class="tooltip-rarity" :class="item.rarity.toLowerCase()">{{ item.rarity }}</span> -->
+        <!-- <span v-if="rarity" class="tooltip-rarity" :class="rarity.toLowerCase()">{{ rarity }}</span> -->
       </div>
 
-      <div class="tooltip-description">{{ item.description }}</div>
+      <div class="tooltip-description">{{ description }}</div>
 
       <div v-if="item.stackable" class="tooltip-stack-info">
         Stack: {{ item.quantity }}/{{ item.maxStackSize }}
@@ -41,7 +41,7 @@
           <kbd>Click</kbd> to use
         </div> -->
         <div v-if="item.stackable && item.quantity > 1" class="item-action">
-          <kbd>Shift+Click</kbd> to split stack
+          <kbd>Shift+Click</kbd> to split
         </div>
         <div class="item-action"><kbd>Drag</kbd> to move</div>
       </div>
@@ -89,12 +89,11 @@ export default defineComponent({
   setup(props) {
     const inventoryStore = useInventoryStore();
     const isDragging = ref(false);
+    // Get the item class to access its properties
+    const itemClass = inventoryStore.getItemClass(props.item);
 
     // Compute image source based on item ID
     const itemImageSrc = computed(() => {
-      // Get the item class to access its properties
-      const itemClass = inventoryStore.getItemClass(props.item);
-
       // If the item has a getImageUrl method, use it
       if (itemClass && itemClass.iconPath) {
         return itemClass.iconPath;
@@ -126,6 +125,8 @@ export default defineComponent({
       onDragStart,
       onDragEnd,
       isDragging,
+      rarity: itemClass?.getRarity(),
+      description: itemClass?.getDescription(),
     };
   },
 });
@@ -151,6 +152,10 @@ export default defineComponent({
   justify-content: center;
   align-items: center;
   position: relative;
+  z-index: 2;
+  &:hover {
+    filter: saturate(1.2);
+  }
 }
 
 .item-image {
@@ -161,8 +166,8 @@ export default defineComponent({
 
 .item-quantity {
   position: absolute;
-  bottom: 5px;
-  right: 5px;
+  top: 5px;
+  left: 5px;
   background-color: rgba(0, 0, 0, 0.7);
   color: white;
   font-size: 10px;
@@ -177,7 +182,7 @@ export default defineComponent({
 
 .slot-number {
   position: absolute;
-  top: 5px;
+  bottom: 5px;
   left: 5px;
   font-size: 10px;
   color: white;
@@ -223,7 +228,7 @@ export default defineComponent({
   border-radius: 6px;
   padding: 10px;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
-  z-index: 999;
+  z-index: 999 !important;
   opacity: 0;
   visibility: hidden;
   transition: all 0.2s ease;
@@ -266,8 +271,8 @@ export default defineComponent({
 }
 
 .tooltip-title {
-  font-weight: bold;
-  font-size: 14px;
+  font-weight: 800;
+  font-size: 16px;
 }
 
 .tooltip-rarity {
@@ -276,29 +281,39 @@ export default defineComponent({
   border-radius: 3px;
 }
 
-.tooltip-rarity.common {
-  background-color: #929292;
-  color: #ffffff;
+.item-tooltip.common {
+  border-color: #929292;
+  .tooltip-title {
+    color: #929292;
+  }
 }
 
-.tooltip-rarity.uncommon {
-  background-color: #2dc50e;
-  color: #ffffff;
+.item-tooltip.uncommon {
+  border-color: #2dc50e;
+  .tooltip-title {
+    color: #2dc50e;
+  }
 }
 
-.tooltip-rarity.rare {
-  background-color: #0070dd;
-  color: #ffffff;
+.item-tooltip.rare {
+  border-color: #0070dd;
+  .tooltip-title {
+    color: #0070dd;
+  }
 }
 
-.tooltip-rarity.epic {
-  background-color: #a335ee;
-  color: #ffffff;
+.item-tooltip.epic {
+  border-color: #a335ee;
+  .tooltip-title {
+    color: #a335ee;
+  }
 }
 
-.tooltip-rarity.legendary {
-  background-color: #ff8000;
-  color: #ffffff;
+.item-tooltip.legendary {
+  border-color: #ff8000;
+  .tooltip-title {
+    color: #ff8000;
+  }
 }
 
 .tooltip-description {

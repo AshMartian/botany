@@ -90,7 +90,7 @@ export const useInventoryStore = defineStore('inventory', {
       items: [],
       isInventoryOpen: false,
       maxInventorySize: 27 * 3, // 3 rows of 9 items
-      activeHotbarSlot: 0,
+      activeHotbarSlot: 1,
     }) as InventoryState,
 
   getters: {

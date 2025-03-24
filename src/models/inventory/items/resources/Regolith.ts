@@ -18,7 +18,7 @@ export class Regolith extends Resource implements InventoryItemDefinition {
   }
 
   public override getDescription(): string {
-    return `It is a pile of loose, fragmented material from the Martian surface.`;
+    return `A pile of loose, fragmented material from the Martian surface.`;
   }
 
   public getResourceType(): string {
