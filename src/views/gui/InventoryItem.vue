@@ -2,18 +2,16 @@
   <div
     class="inventory-item"
     :class="{ 'hotbar-item': isHotbarItem }"
-    :data-testid="`inventory-item-${item.id}`"
     draggable="true"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
+    @mouseenter="$emit('hover', $event.target.getBoundingClientRect(), item)"
+    @mouseleave="$emit('hover-end')"
   >
     <div class="item-image-container">
       <img :src="itemImageSrc" :alt="item.name" class="item-image" />
-
       <div v-if="item.quantity > 1" class="item-quantity">{{ item.quantity }}</div>
-
       <div v-if="showSlotNumber && slotNumber" class="slot-number">{{ slotNumber }}</div>
-
       <button
         v-if="removable"
         class="remove-item-btn"
@@ -23,43 +21,20 @@
         ×
       </button>
     </div>
-
-    <div class="item-tooltip" :class="[{ visible: isDragging }, rarity?.toLowerCase()]">
-      <div class="tooltip-header">
-        <span class="tooltip-title">{{ item.name }}</span>
-        <!-- <span v-if="rarity" class="tooltip-rarity" :class="rarity.toLowerCase()">{{ rarity }}</span> -->
-      </div>
-
-      <div class="tooltip-description">{{ description }}</div>
-
-      <div v-if="item.stackable" class="tooltip-stack-info">
-        Stack: {{ item.quantity }}/{{ item.maxStackSize }}
-      </div>
-
-      <div class="tooltip-actions">
-        <!-- <div v-if="!item.isResource && item.canUse" class="item-action">
-          <kbd>Click</kbd> to use
-        </div> -->
-        <div v-if="item.stackable && item.quantity > 1" class="item-action">
-          <kbd>Shift+Click</kbd> to split
-        </div>
-        <div class="item-action"><kbd>Drag</kbd> to move</div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script lang="ts">
 import { defineComponent, computed, ref } from 'vue';
-import { IInventoryItem } from '@/models/inventory/InventoryItem';
 import { useInventoryStore } from '@/stores/inventoryStore';
+import type { InventoryItemWithPosition } from '@/stores/inventoryStore';
 
 export default defineComponent({
   name: 'InventoryItem',
 
   props: {
     item: {
-      type: Object as () => IInventoryItem & { stackId?: string },
+      type: Object as () => InventoryItemWithPosition,
       required: true,
     },
     slotId: {
@@ -84,11 +59,13 @@ export default defineComponent({
     },
   },
 
-  emits: ['remove'],
+  emits: ['remove', 'hover', 'hover-end', 'drag-start', 'drag-end'],
 
-  setup(props) {
+  setup(props, { emit }) {
     const inventoryStore = useInventoryStore();
     const isDragging = ref(false);
+    const tooltipRef = ref<HTMLElement | null>(null);
+
     // Get the item class to access its properties
     const itemClass = inventoryStore.getItemClass(props.item);
 
@@ -107,6 +84,7 @@ export default defineComponent({
     const onDragStart = (event: DragEvent) => {
       if (!event.dataTransfer) return;
       isDragging.value = true;
+      emit('drag-start');
 
       // Set the drag data and effect
       event.dataTransfer.setData('stackId', props.item.stackId || '');
@@ -118,6 +96,7 @@ export default defineComponent({
     // Handle drag end
     const onDragEnd = () => {
       isDragging.value = false;
+      emit('drag-end');
     };
 
     return {
@@ -125,6 +104,7 @@ export default defineComponent({
       onDragStart,
       onDragEnd,
       isDragging,
+      tooltipRef,
       rarity: itemClass?.getRarity(),
       description: itemClass?.getDescription(),
     };
@@ -139,6 +119,7 @@ export default defineComponent({
   position: relative;
   cursor: pointer;
   transition: transform 0.2s ease;
+  transform-style: preserve-3d;
 }
 
 .inventory-item:hover {
@@ -153,6 +134,7 @@ export default defineComponent({
   align-items: center;
   position: relative;
   z-index: 2;
+  transform: translateZ(0);
   &:hover {
     filter: saturate(1.2);
   }
@@ -220,15 +202,14 @@ export default defineComponent({
 /* Tooltip Styles */
 .item-tooltip {
   position: absolute;
-  top: -5px;
-  left: 105%;
+  transform: translateZ(1px);
   width: 200px;
   background-color: rgba(20, 20, 20, 0.95);
   color: white;
   border-radius: 6px;
   padding: 10px;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
-  z-index: 999 !important;
+  z-index: 9999;
   opacity: 0;
   visibility: hidden;
   transition: all 0.2s ease;
@@ -245,19 +226,23 @@ export default defineComponent({
 .inventory-item:hover .item-tooltip:not(.visible) {
   opacity: 1;
   visibility: visible;
-  left: 110%;
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  margin-left: 10px;
+  transform: translateY(-50%) translateZ(1px);
 }
 
 /* Position the tooltip differently for hotbar items */
 .hotbar-item .item-tooltip {
   top: auto;
-  bottom: 105%;
+  bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
 }
 
 .hotbar-item:hover .item-tooltip {
-  bottom: 110%;
+  bottom: calc(100% + 10px);
   left: 50%;
 }
 

@@ -13,15 +13,22 @@
           :key="'inv-' + (index - 1)"
           class="inventory-slot"
           @dragover.prevent
-          @drop="onDrop($event, index - 1)"
-          @click="onInventorySlotClick(getItemAtPosition('inventory', index - 1), $event)"
+          @drop.stop="(e: any) => onDrop(e, index - 1)"
+          @click.stop="
+            (e: any) => onInventorySlotClick(getItemAtPosition('inventory', index - 1), e)
+          "
         >
-          <InventoryItem
-            v-if="getItemAtPosition('inventory', index - 1)"
-            :item="getItemAtPosition('inventory', index - 1)"
-            :slot-id="'inv-' + (index - 1)"
-            :removable="false"
-          />
+          <template v-if="getItemAtPosition('inventory', index - 1)">
+            <InventoryItem
+              :item="getItemAtPosition('inventory', index - 1)!"
+              :slot-id="'inv-' + (index - 1)"
+              :removable="false"
+              @hover="onItemHover"
+              @hover-end="onItemHoverEnd"
+              @dragstart="onDragStart"
+              @dragend="onDragEnd"
+            />
+          </template>
         </div>
       </div>
     </div>
@@ -36,15 +43,23 @@
       <p>Press 1-9 keys to select hotbar slots</p>
       <p>Press I or ESC to close inventory</p>
     </div>
+
+    <ItemTooltip
+      :item="hoveredItem"
+      :show="!!hoveredItem"
+      :target-rect="tooltipTarget"
+      :is-hotbar-item="false"
+    />
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, computed, onMounted, onBeforeUnmount } from 'vue';
-import { IInventoryItem } from '@/models/inventory/InventoryItem';
+import { defineComponent, computed, ref, onMounted, onBeforeUnmount } from 'vue';
+import type { InventoryItemWithPosition } from '@/stores/inventoryStore';
 import Hotbar from './Hotbar.vue';
 import InventoryItem from './InventoryItem.vue';
-import { useInventoryStore, InventoryItemWithPosition } from '@/stores/inventoryStore';
+import ItemTooltip from './ItemTooltip.vue';
+import { useInventoryStore } from '@/stores/inventoryStore';
 import { usePlayerStore } from '@/stores/playerStore';
 
 export default defineComponent({
@@ -53,23 +68,100 @@ export default defineComponent({
   components: {
     Hotbar,
     InventoryItem,
+    ItemTooltip,
   },
 
   setup() {
-    // Use Pinia stores instead of Vuex
     const inventoryStore = useInventoryStore();
     const playerStore = usePlayerStore();
-
-    // Get player ID from player store
     const playerId = computed(() => playerStore.currentPlayerId || 'default');
-
-    // Use computed properties from Pinia store
     const isOpen = computed(() => inventoryStore.isOpen);
-    const inventoryItems = computed(() => inventoryStore.inventoryItems);
+    const isDragging = ref(false);
 
-    // Get item at position using the store getter
     const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
       return inventoryStore.getItemAtPosition(type, index);
+    };
+
+    const hoveredItem = ref<InventoryItemWithPosition | null>(null);
+    const tooltipTarget = ref<DOMRect | null>(null);
+
+    const onItemHover = (rect: DOMRect, item: InventoryItemWithPosition) => {
+      if (!isDragging.value) {
+        hoveredItem.value = item;
+        tooltipTarget.value = rect;
+      }
+    };
+
+    const onItemHoverEnd = () => {
+      hoveredItem.value = null;
+      tooltipTarget.value = null;
+    };
+
+    const onDragStart = () => {
+      isDragging.value = true;
+      hoveredItem.value = null;
+      tooltipTarget.value = null;
+    };
+
+    const onDragEnd = () => {
+      isDragging.value = false;
+    };
+
+    // Handle dropping items
+    const onDrop = async (event: DragEvent & Record<string, never>, index: number) => {
+      event.preventDefault();
+      if (!event.dataTransfer || !playerId.value) return;
+
+      const stackId = event.dataTransfer.getData('stackId');
+      if (!stackId) {
+        console.warn('No stackId found in drag data');
+        return;
+      }
+
+      try {
+        await inventoryStore.moveItem(playerId.value, stackId, {
+          type: 'inventory',
+          index: index,
+        });
+      } catch (error) {
+        console.error('Error moving item:', error);
+        if (playerId.value) {
+          await inventoryStore.forceRefreshInventory(playerId.value);
+        }
+      }
+    };
+
+    // Handle clicking items
+    const onInventorySlotClick = async (
+      item: InventoryItemWithPosition | undefined,
+      event: MouseEvent & Record<string, never>
+    ) => {
+      if (!item || !playerId.value) return;
+
+      // Handle shift-click for stack splitting
+      if ((event.shiftKey || event.ctrlKey) && item.stackable && item.quantity > 1) {
+        const newQuantity = event.shiftKey ? Math.floor(item.quantity / 2) : 1;
+        const remainingQuantity = item.quantity - newQuantity;
+
+        // Find first empty inventory slot
+        let emptySlotIndex = 0;
+        while (getItemAtPosition('inventory', emptySlotIndex) && emptySlotIndex < 27) {
+          emptySlotIndex++;
+        }
+
+        if (emptySlotIndex < 27) {
+          await inventoryStore.updateItemQuantity(playerId.value, item.stackId, remainingQuantity);
+
+          await inventoryStore.addSplitStack(playerId.value, item, newQuantity, {
+            type: 'inventory',
+            index: emptySlotIndex,
+          });
+        }
+        return;
+      }
+
+      // Regular item use
+      await inventoryStore.useItem(playerId.value, item.stackId);
     };
 
     // Add keyboard event handling
@@ -115,90 +207,10 @@ export default defineComponent({
       inventoryStore.toggleInventory();
     };
 
-    const useItem = async (item: IInventoryItem & { stackId?: string }) => {
+    const useItem = async (item: InventoryItemWithPosition & { stackId?: string }) => {
       if (item?.stackId && playerId.value) {
         // Use the useItem action from the store
         await inventoryStore.useItem(playerId.value, item.stackId);
-      }
-    };
-
-    const onDrop = async (event: DragEvent, index: number) => {
-      event.preventDefault();
-      if (!event.dataTransfer || !playerId.value) return;
-
-      const stackId = event.dataTransfer.getData('stackId');
-      if (!stackId) {
-        console.warn('No stackId found in drag data');
-        return;
-      }
-
-      try {
-        // Move the item to the new position in the inventory using Pinia action
-        await inventoryStore.moveItem(playerId.value, stackId, {
-          type: 'inventory',
-          index: index,
-        });
-      } catch (error) {
-        console.error('Error moving item:', error);
-        // If there was an error, force a refresh anyway
-        if (playerId.value) {
-          await inventoryStore.forceRefreshInventory(playerId.value);
-        }
-      }
-    };
-
-    const onInventorySlotClick = async (
-      item: InventoryItemWithPosition | undefined,
-      event: MouseEvent
-    ) => {
-      if (!item || !playerId.value) return;
-
-      // Handle shift-click for stack splitting
-      if ((event.shiftKey || event.ctrlKey) && item.stackable && item.quantity > 1) {
-        // Split the stack
-        // For shift-click, split the stack in half
-        // For ctrl-click, split the stack into 1
-        const newQuantity = event.shiftKey ? Math.floor(item.quantity / 2) : 1;
-        const remainingQuantity = item.quantity - newQuantity;
-
-        // Find first empty inventory slot
-        let emptySlotIndex = 0;
-        while (getItemAtPosition('inventory', emptySlotIndex) && emptySlotIndex < 27) {
-          emptySlotIndex++;
-        }
-
-        if (emptySlotIndex < 27) {
-          // Update original stack quantity
-          if (item.stackId) {
-            await inventoryStore.updateItemQuantity(
-              playerId.value,
-              item.stackId,
-              remainingQuantity
-            );
-          }
-
-          // Create new stack with split quantity
-          await inventoryStore.addSplitStack(playerId.value, item, newQuantity, {
-            type: 'inventory',
-            index: emptySlotIndex,
-          });
-        } else {
-          console.warn('No empty slots available for split stack');
-        }
-        return;
-      }
-
-      // Regular item use if not splitting
-      if (item.stackId) {
-        // Check if the item has a use function in its class
-        try {
-          // If the item's use function returns false or doesn't exist, use the default behavior
-          await inventoryStore.useItem(playerId.value, item.stackId);
-        } catch (error) {
-          console.error('Error using item:', error);
-          // Fallback to default use behavior
-          await inventoryStore.useItem(playerId.value, item.stackId);
-        }
       }
     };
 
@@ -209,6 +221,13 @@ export default defineComponent({
       useItem,
       onDrop,
       onInventorySlotClick,
+      hoveredItem,
+      tooltipTarget,
+      onItemHover,
+      onItemHoverEnd,
+      isDragging,
+      onDragStart,
+      onDragEnd,
     };
   },
 });

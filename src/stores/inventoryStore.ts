@@ -64,8 +64,18 @@ async function loadFromIndexedDB(playerId: string): Promise<InventoryItemWithPos
     if (items && Array.isArray(items)) {
       // console.log('Loaded inventory from IndexedDB:', items);
 
+      // Filter out any duplicate stack IDs
+      const uniqueStackIds = new Set<string>();
+      const filteredItems = items.filter((item: any) => {
+        if (uniqueStackIds.has(item.stackId)) {
+          return false; // Skip duplicates
+        }
+        uniqueStackIds.add(item.stackId);
+        return true; // Keep unique items
+      });
+
       // Ensure all items have stackId and valid position
-      return items.map((item: any, index: number) => {
+      return filteredItems.map((item: any, index: number) => {
         const validItem: InventoryItemWithPosition = {
           ...item,
           stackId: item.stackId || generateUUID(),
@@ -279,13 +289,12 @@ export const useInventoryStore = defineStore('inventory', {
       if (targetIndex !== -1) {
         const targetItem = this.items[targetIndex];
 
+        if (targetItem.stackId === sourceItem.stackId) {
+          return; // Prevent moving to the same stack
+        }
+
         // If items are the same type and stackable
-        if (
-          targetItem.id === sourceItem.id &&
-          sourceItem.stackable &&
-          targetItem.stackable &&
-          targetItem.stackId !== sourceItem.stackId
-        ) {
+        if (targetItem.id === sourceItem.id && sourceItem.stackable && targetItem.stackable) {
           const totalQuantity = targetItem.quantity + sourceItem.quantity;
 
           if (totalQuantity <= targetItem.maxStackSize) {

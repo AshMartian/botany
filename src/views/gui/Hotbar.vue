@@ -9,36 +9,51 @@
       :key="'hotbar-' + (slotIndex - 1)"
       class="hotbar-slot"
       :class="{ active: slotIndex - 1 === activeSlot }"
-      @click="selectSlot(slotIndex - 1, $event)"
+      @click="(e: any) => selectSlot(slotIndex - 1, e)"
       @dragover.prevent
-      @drop="onDropToHotbar($event, slotIndex - 1)"
+      @drop="(e: any) => onDropToHotbar(e, slotIndex - 1)"
     >
-      <InventoryItem
-        v-if="getItemAtPosition('hotbar', slotIndex - 1)"
-        :item="getItemAtPosition('hotbar', slotIndex - 1)"
-        :slot-number="slotIndex"
-        :show-slot-number="true"
-        :removable="true"
-        :slot-id="'hotbar-' + (slotIndex - 1)"
-        :is-hotbar-item="true"
-        @remove="removeItemFromSlot(slotIndex - 1)"
-      />
+      <template v-if="getItemAtPosition('hotbar', slotIndex - 1)">
+        <InventoryItem
+          :item="getItemAtPosition('hotbar', slotIndex - 1)!"
+          :slot-number="slotIndex"
+          :show-slot-number="true"
+          :removable="true"
+          :slot-id="'hotbar-' + (slotIndex - 1)"
+          :is-hotbar-item="true"
+          @remove="removeItemFromSlot(slotIndex - 1)"
+          @hover="onItemHover"
+          @hover-end="onItemHoverEnd"
+          @dragstart="onDragStart"
+          @dragend="onDragEnd"
+        />
+      </template>
       <div v-else class="slot-number">{{ slotIndex }}</div>
     </div>
+
+    <ItemTooltip
+      :item="hoveredItem"
+      :show="!!hoveredItem"
+      :target-rect="tooltipTarget"
+      :is-hotbar-item="true"
+    />
   </div>
 </template>
 
 <script lang="ts">
 import { defineComponent, computed, ref } from 'vue';
 import InventoryItem from './InventoryItem.vue';
+import ItemTooltip from './ItemTooltip.vue';
 import { useInventoryStore } from '@/stores/inventoryStore';
 import { usePlayerStore } from '@/stores/playerStore';
+import type { InventoryItemWithPosition } from '@/stores/inventoryStore';
 
 export default defineComponent({
   name: 'GameHotbar',
 
   components: {
     InventoryItem,
+    ItemTooltip,
   },
 
   props: {
@@ -61,17 +76,18 @@ export default defineComponent({
     const activeSlot = ref(0);
 
     // Get item at position using the store getter
-    const getItemAtPosition = (type: 'inventory' | 'hotbar', index: number) => {
+    const getItemAtPosition = (
+      type: 'inventory' | 'hotbar',
+      index: number
+    ): InventoryItemWithPosition | undefined => {
       return inventoryStore.getItemAtPosition(type, index);
     };
 
-    const selectSlot = (slotIndex: number, event: MouseEvent) => {
-      // Handle shift-click for stack splitting
+    const selectSlot = async (slotIndex: number, event: MouseEvent) => {
       const item = getItemAtPosition('hotbar', slotIndex);
-      if ((event.shiftKey || event.ctrlKey) && item?.stackable && item.quantity > 1) {
-        // Split the stack
-        if (!playerId.value) return;
+      if (!item || !playerId.value) return;
 
+      if ((event.shiftKey || event.ctrlKey) && item.stackable && item.quantity > 1) {
         const newQuantity = event.shiftKey ? Math.floor(item.quantity / 2) : 1;
         const remainingQuantity = item.quantity - newQuantity;
 
@@ -82,21 +98,16 @@ export default defineComponent({
         }
 
         if (emptySlotIndex < 27) {
-          // Update original stack quantity
-          inventoryStore.updateItemQuantity(playerId.value, item.stackId, remainingQuantity);
+          await inventoryStore.updateItemQuantity(playerId.value, item.stackId, remainingQuantity);
 
-          // Create new stack with split quantity
-          inventoryStore.addSplitStack(playerId.value, item, newQuantity, {
+          await inventoryStore.addSplitStack(playerId.value, item, newQuantity, {
             type: 'inventory',
             index: emptySlotIndex,
           });
-        } else {
-          console.warn('No empty slots available for split stack');
         }
         return;
       }
 
-      // Regular slot selection
       activeSlot.value = slotIndex;
     };
 
@@ -128,6 +139,7 @@ export default defineComponent({
       // Find the item at this hotbar position
       const item = getItemAtPosition('hotbar', slotIndex);
       if (!item?.stackId || !playerId.value) return;
+      tooltipTarget.value = null;
 
       // Find an empty inventory slot
       let emptySlotIndex = 0;
@@ -146,12 +158,46 @@ export default defineComponent({
       }
     };
 
+    const isDragging = ref(false);
+
+    const hoveredItem = ref<InventoryItemWithPosition | null>(null);
+    const tooltipTarget = ref<DOMRect | null>(null);
+
+    const onItemHover = (rect: DOMRect, item: InventoryItemWithPosition) => {
+      if (!isDragging.value) {
+        hoveredItem.value = item;
+        tooltipTarget.value = rect;
+      }
+    };
+
+    const onItemHoverEnd = () => {
+      hoveredItem.value = null;
+      tooltipTarget.value = null;
+    };
+
+    const onDragStart = () => {
+      isDragging.value = true;
+      hoveredItem.value = null;
+      tooltipTarget.value = null;
+    };
+
+    const onDragEnd = () => {
+      isDragging.value = false;
+    };
+
     return {
       activeSlot,
       getItemAtPosition,
       selectSlot,
       onDropToHotbar,
       removeItemFromSlot,
+      isDragging,
+      hoveredItem,
+      tooltipTarget,
+      onItemHover,
+      onItemHoverEnd,
+      onDragStart,
+      onDragEnd,
     };
   },
 });
