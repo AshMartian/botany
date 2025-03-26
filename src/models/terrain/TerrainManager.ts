@@ -7,6 +7,7 @@ import {
 } from '@babylonjs/core';
 import TerrainChunk from './TerrainChunk';
 import WorldManager from './WorldManager';
+import TerrainProcGen from './TerrainProcGen';
 
 declare global {
   interface Window {
@@ -53,12 +54,18 @@ export default class TerrainManager {
   // Lock to prevent concurrent updates
   private loadingLock = false;
 
+  private static procGen: TerrainProcGen | null = null;
+
   constructor(scene: BabylonScene, chunkSize = 128, renderDistance = 3) {
     this.scene = scene;
     this.loadedChunks = new Map();
     this.loadingChunks = new Set();
     this.chunkSize = chunkSize;
     this.renderDistance = renderDistance;
+
+    if (!TerrainManager.procGen) {
+      TerrainManager.procGen = new TerrainProcGen(scene);
+    }
 
     console.log(
       `TerrainManager initialized with chunk size ${chunkSize} and render distance ${renderDistance}`
@@ -235,6 +242,10 @@ export default class TerrainManager {
 
       // Store in loaded chunks map
       this.loadedChunks.set(key, chunk);
+
+      if (TerrainManager.procGen) {
+        await TerrainManager.procGen.processChunk(x, y);
+      }
 
       return chunk;
     } catch (error) {

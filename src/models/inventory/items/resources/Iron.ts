@@ -4,9 +4,9 @@ export class Iron extends Resource implements InventoryItemDefinition {
   constructor(quantity = 1) {
     super({
       quantity,
-      id: 'metal',
-      name: 'Metal',
-      iconPath: '/resources/textures/items/metal.jpg',
+      id: 'iron',
+      name: 'Iron',
+      iconPath: '/resources/graphics/textures/items/iron.jpg',
       stackable: true,
       maxStackSize: 5,
       type: 'metal',

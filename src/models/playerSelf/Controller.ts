@@ -1,20 +1,22 @@
-import { Scene, KeyboardEventTypes } from '@babylonjs/core';
-
+import { Scene, KeyboardEventTypes, Vector3 } from '@babylonjs/core';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useInventoryStore, InventoryItemWithPosition } from '@/stores/inventoryStore';
+import { ResourceCollectorService } from '@/services/ResourceCollectorService';
 
 export default class Controller {
   sensitiveMouse: number;
   mouseIsCaptured: boolean | Element;
   scene: Scene;
+  resourceCollector: ResourceCollectorService;
 
   constructor() {
     this.sensitiveMouse = 0.004;
     this.mouseIsCaptured = false;
     this.scene = globalThis.scene;
+    // Initialize resource collector service
+    this.resourceCollector = new ResourceCollectorService(this.scene);
 
     this.mouseEvent();
-
     this.scene.onKeyboardObservable.add((event) => {
       this.keyEvent(event);
     });
@@ -28,11 +30,13 @@ export default class Controller {
     }
 
     const playerStore = usePlayerStore();
-
     if (!playerStore.selfPlayer) {
       console.warn('Player not found in store');
       return;
     }
+
+    // Make sure the resource collector knows the current player ID
+    this.resourceCollector.setPlayerId(playerStore.selfPlayer.id);
 
     const forward = { ...playerStore.selfPlayer?.move.forward };
     const eventCode = e.event.code;
@@ -42,62 +46,54 @@ export default class Controller {
       if (eventCode === 'KeyW') {
         forward.front = true;
       }
-
       if (eventCode === 'KeyS') {
         forward.back = true;
       }
-
       if (eventCode === 'KeyA') {
         forward.left = true;
       }
-
       if (eventCode === 'KeyD') {
         forward.right = true;
       }
-
       // Add shift key detection for sprint
       if (eventCode === 'ShiftLeft' || eventCode === 'ShiftRight') {
         forward.sprint = true;
       }
-
       if (eventCode === 'Space') {
         playerStore.setJump(playerStore.selfPlayer.id, true);
       }
+      // Handle resource interaction with E key
+      if (eventCode === 'KeyE') {
+        this.handleResourceInteraction();
+      }
 
       const inventoryStore = useInventoryStore();
-
       // Handle inventory opening with I key or Escape key or Tab key
       if (eventCode === 'KeyI' || eventCode === 'Escape' || eventCode === 'Tab') {
         const currentState = inventoryStore.isInventoryOpen;
-
         // Only handle opening the inventory, not closing
         if (!currentState) {
           console.log('Opening inventory from Controller');
           inventoryStore.toggleInventory();
-
           // Release pointer lock when opening inventory
           if (document.pointerLockElement) {
             document.exitPointerLock();
             this.mouseIsCaptured = false;
           }
         }
-
         // If inventory is already open, let the Inventory component handle closing
         if (currentState) {
           return;
         }
       }
-
       // Hotbar selection with number keys (1-9)
       if (eventCode.match(/^Digit[1-9]$/)) {
         const slotIndex = parseInt(eventCode.replace('Digit', '')) - 1;
         console.log(`Setting hotbar active slot to: ${slotIndex}`);
         inventoryStore.setActiveHotbarSlot(slotIndex);
-
         // Get the item in the selected slot
         const slots = inventoryStore.hotbarItems;
         const selectedSlot = slots[slotIndex] as InventoryItemWithPosition;
-
         if (selectedSlot && selectedSlot.stackId) {
           // If there's an item in the slot, use it
           inventoryStore.useItem(playerStore.selfPlayer.id, selectedSlot.stackId);
@@ -111,30 +107,56 @@ export default class Controller {
       if (eventCode === 'KeyW') {
         forward.front = false;
       }
-
       if (eventCode === 'KeyS') {
         forward.back = false;
       }
-
       if (eventCode === 'KeyA') {
         forward.left = false;
       }
-
       if (eventCode === 'KeyD') {
         forward.right = false;
       }
-
       // Add shift key detection for sprint
       if (eventCode === 'ShiftLeft' || eventCode === 'ShiftRight') {
         forward.sprint = false;
       }
-
       if (eventCode === 'Space') {
         playerStore.setJump(playerStore.selfPlayer.id, false);
       }
     }
 
     playerStore.setForward(playerStore.selfPlayer.id, forward);
+  }
+
+  /**
+   * Handle interacting with resources in the world
+   */
+  private async handleResourceInteraction(): Promise<void> {
+    const playerStore = usePlayerStore();
+    if (!playerStore.selfPlayer) return;
+
+    // Get player position and direction
+    const position = playerStore.selfPlayer.position;
+    const rotation = playerStore.selfPlayer.rotation;
+
+    // Calculate forward direction based on player rotation
+    const forward = new Vector3(Math.sin(rotation.y), 0, Math.cos(rotation.y));
+
+    // Adjust for camera height (typically player's eye level)
+    const origin = new Vector3(
+      position.x,
+      position.y + 1.6, // Typical eye height
+      position.z
+    );
+
+    // Try to interact with a resource
+    const success = await this.resourceCollector.handleInteraction(origin, forward);
+
+    // Could add feedback for the player here (sound, visual effect, etc.)
+    if (success) {
+      console.log('Resource collected!');
+      // Play sound or show visual effect
+    }
   }
 
   private mouseEvent() {

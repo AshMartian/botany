@@ -12,6 +12,8 @@ import TerrainMaterial from './TerrainMaterial';
 import { TerrainChunkDTO } from './TerrainManager';
 import { createNoise2D } from 'simplex-noise';
 import alea from 'alea';
+import { useTerrainStore } from '@/stores/terrainStore';
+import TerrainProcGen from './TerrainProcGen';
 
 export default class TerrainChunk {
   private mesh: Mesh | null = null;
@@ -24,17 +26,22 @@ export default class TerrainChunk {
 
   private heightScale = 512;
   private noise: ReturnType<typeof createNoise2D>;
+  private terrainStore = useTerrainStore();
+  private static procGen: TerrainProcGen | null = null;
 
   constructor(x: number, y: number, size: number, scene: BabylonScene) {
     this.x = x;
     this.y = y;
     this.size = size;
     this.scene = scene;
-    // Create noise function with default seed
-    // For seeded noise, you would need to add 'alea' package and use:
-    //
+
+    // Initialize procedural generation system if needed
+    if (!TerrainChunk.procGen) {
+      TerrainChunk.procGen = new TerrainProcGen(scene);
+    }
+
+    // Create noise function with seeded noise
     this.noise = createNoise2D(alea(this.getSeed()));
-    // this.noise = createNoise2D();
   }
 
   private getSeed(): string {
@@ -54,6 +61,9 @@ export default class TerrainChunk {
     this.mesh = new Mesh(`terrain_chunk_${this.x}_${this.y}`, this.scene);
 
     try {
+      // Process the chunk with our procedural generation system first
+      // This will check the terrainStore for existing data or create new data
+
       // console.log(`Generating chunk ${this.x}_${this.y}`);
       // Fetch heightmap data from the server
       const heightmapData = await this.fetchHeightmapData();
@@ -346,6 +356,11 @@ export default class TerrainChunk {
   }
 
   public dispose(): void {
+    // Clean up any resources for this chunk
+    if (TerrainChunk.procGen) {
+      TerrainChunk.procGen.cleanupChunk(this.x, this.y);
+    }
+
     if (this.mesh) {
       this.mesh.dispose();
       this.mesh = null;
