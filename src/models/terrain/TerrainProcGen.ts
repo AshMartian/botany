@@ -68,7 +68,7 @@ export default class TerrainProcGen {
 
         const { resourceType, isLoose } = mesh.metadata;
         const verb = isLoose ? 'Collect' : 'Mine';
-        return [`[F] ${verb} ${resourceType}`, 'F'];
+        return [`${verb} ${resourceType}`, 'F'];
       },
       onInteract: (hit) => {
         const mesh = hit.pickedMesh;

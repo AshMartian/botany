@@ -1,4 +1,4 @@
-import { Color3, Engine, Vector3, Scene as BabylonScene } from '@babylonjs/core';
+import { Color3, Engine, Vector3, Scene as BabylonScene, CannonJSPlugin } from '@babylonjs/core';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useInventoryStore } from '@/stores/inventoryStore';
 import PlayerSpawner from '@/models/playerOnline/PlayerSpawner';
@@ -6,7 +6,7 @@ import SharedPlayerState from '@/models/playerOnline/SharedPlayerState';
 import WorldManager from '@/models/terrain/WorldManager';
 import GameScene from './scene/Scene';
 import Audio from '@/models/sounds/Audio';
-import ServerClient from './ServerClient';
+// import ServerClient from './ServerClient';
 import PlayerSelf from '@/models/playerSelf/Player';
 // import Player from '@/models/player/Player';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,6 +25,9 @@ import GlobalMap from '@/models/terrain/GlobalMap';
 // Import our new services
 import crosshairService from '@/services/CrosshairService';
 import regolithCollector from '@/services/RegolithCollector';
+import * as CANNON from 'cannon';
+
+window.CANNON = CANNON;
 
 export default class Game {
   private scene!: BabylonScene;
@@ -55,6 +58,12 @@ export default class Game {
     });
     const sceneModel = new GameScene(engine);
     this.scene = sceneModel.babylonScene;
+
+    // Ensure physics is enabled with proper gravity BEFORE any entities are created
+    if (!this.scene.getPhysicsEngine()) {
+      console.log('Initializing physics engine in Game.ts');
+      this.scene.enablePhysics(new Vector3(0, -9.81, 0), new CannonJSPlugin());
+    }
 
     // Create player spawner
     this.playerSpawner = new PlayerSpawner(this.scene, this.debugMode);

@@ -574,32 +574,6 @@ export default class TerrainManager {
     console.log(`TerrainManager verbose logging ${verbose ? 'enabled' : 'disabled'}`);
   }
 
-  /**
-   * Load only the most critical chunks first (current chunk and immediate neighbors)
-   */
-  private loadCriticalChunks(centerX: number, centerY: number): void {
-    console.log(`Loading critical chunks around (${centerX}, ${centerY})`);
-
-    // Load current chunk immediately
-    this.loadChunk(centerX, centerY, true);
-
-    // Load immediate neighbors with high priority but don't await them
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        // Skip center chunk (already loaded)
-        if (dx === 0 && dy === 0) continue;
-
-        const x = centerX + dx;
-        const y = centerY + dy;
-
-        // Skip invalid coordinates
-        if (x < 0 || x >= 144 || y < 0 || y >= 72) continue;
-
-        this.loadChunk(x, y, false);
-      }
-    }
-  }
-
   public processChunkUpdate(message: { type: string; payload: any }): void {
     if (message.type === 'chunkData') {
       this.loadRemoteChunk(message.payload);

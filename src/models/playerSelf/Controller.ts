@@ -1,20 +1,17 @@
 import { Scene, KeyboardEventTypes, Vector3 } from '@babylonjs/core';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useInventoryStore, InventoryItemWithPosition } from '@/stores/inventoryStore';
-import { ResourceCollectorService } from '@/services/ResourceCollectorService';
 
 export default class Controller {
   sensitiveMouse: number;
   mouseIsCaptured: boolean | Element;
   scene: Scene;
-  resourceCollector: ResourceCollectorService;
 
   constructor() {
     this.sensitiveMouse = 0.004;
     this.mouseIsCaptured = false;
     this.scene = globalThis.scene;
     // Initialize resource collector service
-    this.resourceCollector = new ResourceCollectorService(this.scene);
 
     this.mouseEvent();
     this.scene.onKeyboardObservable.add((event) => {
@@ -34,9 +31,6 @@ export default class Controller {
       console.warn('Player not found in store');
       return;
     }
-
-    // Make sure the resource collector knows the current player ID
-    this.resourceCollector.setPlayerId(playerStore.selfPlayer.id);
 
     const forward = { ...playerStore.selfPlayer?.move.forward };
     const eventCode = e.event.code;
@@ -61,10 +55,6 @@ export default class Controller {
       }
       if (eventCode === 'Space') {
         playerStore.setJump(playerStore.selfPlayer.id, true);
-      }
-      // Handle resource interaction with E key
-      if (eventCode === 'KeyE') {
-        this.handleResourceInteraction();
       }
 
       const inventoryStore = useInventoryStore();
@@ -126,37 +116,6 @@ export default class Controller {
     }
 
     playerStore.setForward(playerStore.selfPlayer.id, forward);
-  }
-
-  /**
-   * Handle interacting with resources in the world
-   */
-  private async handleResourceInteraction(): Promise<void> {
-    const playerStore = usePlayerStore();
-    if (!playerStore.selfPlayer) return;
-
-    // Get player position and direction
-    const position = playerStore.selfPlayer.position;
-    const rotation = playerStore.selfPlayer.rotation;
-
-    // Calculate forward direction based on player rotation
-    const forward = new Vector3(Math.sin(rotation.y), 0, Math.cos(rotation.y));
-
-    // Adjust for camera height (typically player's eye level)
-    const origin = new Vector3(
-      position.x,
-      position.y + 1.6, // Typical eye height
-      position.z
-    );
-
-    // Try to interact with a resource
-    const success = await this.resourceCollector.handleInteraction(origin, forward);
-
-    // Could add feedback for the player here (sound, visual effect, etc.)
-    if (success) {
-      console.log('Resource collected!');
-      // Play sound or show visual effect
-    }
   }
 
   private mouseEvent() {
