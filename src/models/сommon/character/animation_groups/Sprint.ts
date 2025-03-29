@@ -13,21 +13,31 @@ export default class Sprint implements AnimationGroupInterface {
     this.playerId = playerId;
     this.weight = 0;
     this.autoPlayLoop = true;
-    this.animation = scene.getAnimationGroupByName('Sprint_' + playerId);
     this.intervalId = null;
     this.name = 'Sprint';
 
-    this.setAnimations();
-  }
-
-  setAnimations() {
-    if (this.animation === null) {
-      console.error('Not find Sprint animation');
-      return;
+    // Add check for scene and get animation group
+    if (globalThis.scene) {
+      // Use globalThis.scene consistently
+      this.animation = globalThis.scene.getAnimationGroupByName('Sprint_' + playerId);
+      if (this.animation) {
+        // Configure the found animation group
+        this.animation.name = 'Sprint_' + this.playerId;
+        this.animation.setWeightForAllAnimatables(this.weight);
+        this.animation.play(this.autoPlayLoop);
+      } else {
+        console.warn(`Animation group 'Sprint_${playerId}' not found.`);
+        this.animation = null;
+      }
+    } else {
+      console.error(`Cannot get animation group 'Sprint_${playerId}': scene is undefined.`);
+      this.animation = null;
     }
 
-    this.animation.name = 'Sprint_' + this.playerId;
-    this.animation.setWeightForAllAnimatables(0);
-    this.animation.play(true);
+    // Remove call to setAnimations()
+    // this.setAnimations();
   }
+
+  // Remove the setAnimations method
+  // setAnimations() { ... }
 }

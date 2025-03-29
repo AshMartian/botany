@@ -12,23 +12,31 @@ export default class JumpFinish implements AnimationGroupInterface {
   constructor(playerId: string) {
     this.playerId = playerId;
     this.weight = 0;
-    this.autoPlayLoop = false;
+    this.autoPlayLoop = false; // This animation doesn't loop
     this.intervalId = null;
     this.name = 'JumpFinish';
 
-    this.animation = scene.getAnimationGroupByName('JumpFinish_' + playerId);
-
-    this.setAnimations();
-  }
-
-  setAnimations() {
-    if (!this.animation) {
-      console.error('Not find JumpFinish animation');
-      return;
+    // Add check for scene and get animation group
+    if (globalThis.scene) {
+      this.animation = globalThis.scene.getAnimationGroupByName('JumpFinish_' + playerId);
+      if (this.animation) {
+        // Configure the found animation group
+        this.animation.name = 'JumpFinish_' + this.playerId;
+        this.animation.setWeightForAllAnimatables(this.weight);
+        this.animation.stop(); // Ensure it's stopped initially
+      } else {
+        console.warn(`Animation group 'JumpFinish_${playerId}' not found.`);
+        this.animation = null;
+      }
+    } else {
+      console.error(`Cannot get animation group 'JumpFinish_${playerId}': scene is undefined.`);
+      this.animation = null;
     }
 
-    this.animation.name = 'JumpFinish_' + this.playerId;
-    this.animation.setWeightForAllAnimatables(0);
-    this.animation.stop();
+    // Remove call to setAnimations()
+    // this.setAnimations();
   }
+
+  // Remove the setAnimations method
+  // setAnimations() { ... }
 }

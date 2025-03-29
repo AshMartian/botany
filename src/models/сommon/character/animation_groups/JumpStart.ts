@@ -9,26 +9,35 @@ export default class JumpStart implements AnimationGroupInterface {
   intervalId: number | null;
   name: string;
 
-  //TODO: the classes turned out to be very similar, you can inherit these methods from a common class
   constructor(playerId: string) {
     this.playerId = playerId;
     this.weight = 0;
-    this.autoPlayLoop = false;
-    this.animation = scene.getAnimationGroupByName('JumpStart_' + playerId);
+    this.autoPlayLoop = false; // This animation doesn't loop
     this.intervalId = null;
     this.name = 'JumpStart';
 
-    this.setAnimations();
-  }
-
-  setAnimations() {
-    if (!this.animation) {
-      console.error('Not find JumpStart animation');
-      return;
+    // Add check for scene and get animation group
+    if (globalThis.scene) {
+      // Use globalThis.scene consistently
+      this.animation = globalThis.scene.getAnimationGroupByName('JumpStart_' + playerId);
+      if (this.animation) {
+        // Configure the found animation group
+        this.animation.name = 'JumpStart_' + this.playerId;
+        this.animation.setWeightForAllAnimatables(this.weight);
+        this.animation.stop(); // Ensure it's stopped initially
+      } else {
+        console.warn(`Animation group 'JumpStart_${playerId}' not found.`);
+        this.animation = null;
+      }
+    } else {
+      console.error(`Cannot get animation group 'JumpStart_${playerId}': scene is undefined.`);
+      this.animation = null;
     }
 
-    this.animation.name = 'JumpStart_' + this.playerId;
-    this.animation.setWeightForAllAnimatables(0);
-    this.animation.stop();
+    // Remove call to setAnimations()
+    // this.setAnimations();
   }
+
+  // Remove the setAnimations method
+  // setAnimations() { ... }
 }

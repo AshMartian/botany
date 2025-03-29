@@ -3,7 +3,8 @@ import { defineStore } from 'pinia';
 
 export type PageType = 'MainPage' | 'LevelPage' | 'PlayWithFiendsPage' | 'SettingsPage';
 
-interface AppState {
+// Add 'export' here:
+export interface AppState {
   currentPage: PageType;
   pendingLevelId: string | null;
   isFirstLoad: boolean;

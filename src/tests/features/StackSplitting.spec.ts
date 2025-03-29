@@ -46,7 +46,7 @@ describe('Stack Splitting Functionality', () => {
       maxStackSize: 20,
       stackId: generateUUID(),
       position: {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 0,
       },
     };
@@ -70,7 +70,7 @@ describe('Stack Splitting Functionality', () => {
       inventoryStore.items[0],
       5, // New stack gets 5
       {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 1,
       }
     );
@@ -96,7 +96,7 @@ describe('Stack Splitting Functionality', () => {
       maxStackSize: 20,
       stackId: generateUUID(),
       position: {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 0,
       },
     };
@@ -119,7 +119,7 @@ describe('Stack Splitting Functionality', () => {
       inventoryStore.items[0],
       3, // New stack gets 3 (rounded down from 7/2)
       {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 1,
       }
     );
@@ -141,7 +141,7 @@ describe('Stack Splitting Functionality', () => {
       maxStackSize: 20,
       stackId: generateUUID(),
       position: {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 0,
       },
     };
@@ -156,7 +156,7 @@ describe('Stack Splitting Functionality', () => {
     await inventoryStore.updateItemQuantity(TEST_PLAYER_ID, originalStackId, 3);
 
     await inventoryStore.addSplitStack(TEST_PLAYER_ID, inventoryStore.items[0], 3, {
-      type: 'inventory',
+      type: 'inventory' as const, // <--- Add 'as const'
       index: 1,
     });
 
@@ -176,7 +176,7 @@ describe('Stack Splitting Functionality', () => {
       maxStackSize: 10,
       stackId: generateUUID(),
       position: {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 0,
       },
     };
@@ -186,7 +186,7 @@ describe('Stack Splitting Functionality', () => {
       stackId: generateUUID(),
       quantity: 6,
       position: {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 1,
       },
     };
@@ -199,7 +199,7 @@ describe('Stack Splitting Functionality', () => {
 
     // Move stack2 onto stack1 (simulating drag and drop)
     await inventoryStore.moveItem(TEST_PLAYER_ID, stack2.stackId, {
-      type: 'inventory',
+      type: 'inventory' as const, // <--- Add 'as const'
       index: 0,
     });
 
@@ -235,7 +235,7 @@ describe('Stack Splitting Functionality', () => {
       maxStackSize: 20,
       stackId: generateUUID(),
       position: {
-        type: 'inventory',
+        type: 'inventory' as const, // <--- Add 'as const'
         index: 0,
       },
     };

@@ -262,7 +262,7 @@ export default class Game {
         console.error('   - Error disposing scene:', error);
       }
       this.scene = undefined; // Help GC - Removed @ts-ignore
-      globalThis.scene = undefined; // Reset global
+      // globalThis.scene = undefined; // Reset global
     }
 
     // 4. Dispose Babylon Engine
@@ -281,7 +281,7 @@ export default class Game {
     window.terrainManager = undefined;
     window.miniMap = undefined; // Assuming MiniMap doesn't need explicit dispose
     window.globalMap = undefined; // Assuming GlobalMap doesn't need explicit dispose
-    globalThis.collisions = undefined;
+    // globalThis.collisions = undefined;
     globalThis.environment = undefined; // If environment setup needs cleanup
     globalThis.assetContainers = []; // Reset asset containers
     window.game = undefined; // Remove global game reference

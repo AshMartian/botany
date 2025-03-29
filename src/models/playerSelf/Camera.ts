@@ -39,7 +39,7 @@ export default class Camera {
   player: Player | null; // Allow null if player might not exist
   public zoomFactor = 1.0;
   private _wheelListener: ((event: WheelEvent) => void) | null = null; // Store listener
-  private _beforeRenderObserver: Observer<Scene> | null = null; // Store observer
+  private _beforeRenderObserver: void | null = null; // Store observer
 
   constructor() {
     this.scene = globalThis.scene;
@@ -123,7 +123,7 @@ export default class Camera {
       // Guard against running if meshHead is not valid or disposed
       if (!this.meshHead || this.meshHead.isDisposed() || !this.meshHead.position) {
         // console.warn("Camera attachCamera skipped: meshHead invalid or disposed.");
-        return;
+        return null;
       }
 
       this.setDistance();
@@ -171,6 +171,7 @@ export default class Camera {
 
       const dirY = this.babylonCamera.getDirection(Axis.Y);
       this.babylonCamera.position.addInPlace(dirY.scaleInPlace(-MAX_DIST_CAMERA_Y));
+      return null;
     });
   }
 

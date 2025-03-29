@@ -62,10 +62,10 @@ class CrosshairService {
 
     // Access the camera directly from globalThis with proper typing
     const camera = globalThis.camera?.babylonCamera;
-    if (!camera) return;
+    if (!globalThis.camera || !camera) return;
 
     // Get zoom factor from our camera instance
-    const zoomFactor = globalThis.camera?.zoomFactor * 2 || 1.0;
+    const zoomFactor = globalThis.camera.zoomFactor * 2 || 1.0;
 
     // Adjust max distance based on zoom level
     this.maxDistance = this.baseMaxDistance * zoomFactor;
