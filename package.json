@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@babylonjs/core": "^6.25.0",
+    "@babylonjs/materials": "^6.25.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/vue": "^8.1.0",
     "@types/cannon": "^0.1.13",

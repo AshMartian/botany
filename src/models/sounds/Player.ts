@@ -1,12 +1,12 @@
 import { Mesh, Sound } from '@babylonjs/core';
 import SoundMain from '@/models/sounds/SoundMain';
-import store from '@/store/vuex';
-
+import { useSettingsStore } from '@/stores/settingsStore';
 export default class Player extends SoundMain {
   soundRun: Sound;
   soundSprint: Sound;
   soundJumpFinish: Sound;
   playerId: string;
+  store = useSettingsStore();
 
   constructor(playerId: string) {
     super();
@@ -59,7 +59,7 @@ export default class Player extends SoundMain {
   }
 
   playRun() {
-    if (store.getters.getSettingsValueByName('sound')) {
+    if (this.store.getSettingsValueByName('sound')) {
       if (!this.soundRun.isPlaying) {
         this.soundRun.play();
       }
@@ -67,7 +67,7 @@ export default class Player extends SoundMain {
   }
 
   stopWalk() {
-    if (store.getters.getSettingsValueByName('sound')) {
+    if (this.store.getSettingsValueByName('sound')) {
       if (this.soundRun.isPlaying) {
         this.soundRun.stop();
       }
@@ -75,7 +75,7 @@ export default class Player extends SoundMain {
   }
 
   playSprint() {
-    if (store.getters.getSettingsValueByName('sound')) {
+    if (this.store.getSettingsValueByName('sound')) {
       if (!this.soundSprint.isPlaying) {
         this.soundSprint.play();
       }
@@ -83,7 +83,7 @@ export default class Player extends SoundMain {
   }
 
   stopSprint() {
-    if (store.getters.getSettingsValueByName('sound')) {
+    if (this.store.getSettingsValueByName('sound')) {
       if (this.soundSprint.isPlaying) {
         this.soundSprint.stop();
       }
@@ -91,7 +91,7 @@ export default class Player extends SoundMain {
   }
 
   playJumpFinish() {
-    if (store.getters.getSettingsValueByName('sound')) {
+    if (this.store.getSettingsValueByName('sound')) {
       if (!this.soundJumpFinish.isPlaying) {
         this.soundJumpFinish.play();
       }
@@ -99,7 +99,7 @@ export default class Player extends SoundMain {
   }
 
   stopJumpFinish() {
-    if (store.getters.getSettingsValueByName('sound')) {
+    if (this.store.getSettingsValueByName('sound')) {
       if (this.soundJumpFinish.isPlaying) {
         this.soundJumpFinish.stop();
       }

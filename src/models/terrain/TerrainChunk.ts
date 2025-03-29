@@ -6,7 +6,6 @@ import {
   StandardMaterial,
   Color3,
   MeshBuilder,
-  ShadowDepthWrapper,
 } from '@babylonjs/core';
 import TerrainMaterial from './TerrainMaterial';
 import { TerrainChunkDTO } from './TerrainManager';
@@ -247,7 +246,7 @@ export default class TerrainChunk {
       this.mesh.isPickable = true;
       this.mesh.isVisible = true;
       this.mesh.visibility = 1;
-      this.mesh.receiveShadows = true;
+      // this.mesh.receiveShadows = true; // Set in applyTerrainMaterial
       // this.mesh.doNotSyncBoundingInfo = false;
       this.mesh.metadata = { isTerrainChunk: true, isInteractable: true };
       // Set name for shadow system to identify terrain chunks
@@ -290,40 +289,30 @@ export default class TerrainChunk {
   private applyTerrainMaterial(): void {
     if (!this.mesh) return;
 
-    // Create the material using our new class
-    const shaderMaterial = TerrainMaterial.create(
+    // Create the CustomMaterial using our updated class
+    const customMaterial = TerrainMaterial.create(
+      // This now returns CustomMaterial
       `terrain_material_${this.x}_${this.y}`,
       this.scene,
-      globalThis.shadowGenerator
+      globalThis.shadowGenerator // Pass generator - create doesn't use it directly, but keeps signature consistent for now
     );
 
-    // Update time parameter for potential animation effects
-    const observer = this.scene.onBeforeRenderObservable.add(() => {
-      shaderMaterial.setFloat('time', this.scene.getEngine().getDeltaTime() / 1000);
-
-      // Keep shadow matrix updated
-      if (globalThis.shadowGenerator) {
-        shaderMaterial.setMatrix('lightMatrix', globalThis.shadowGenerator.getTransformMatrix());
-      }
-    });
-
-    // Store the observer for proper cleanup
-    shaderMaterial.onDisposeObservable.add(() => {
-      this.scene.onBeforeRenderObservable.remove(observer);
-    });
+    customMaterial.specularColor = new Color3(0.2, 0.1, 0.05);
+    customMaterial.ambientColor = new Color3(0.5, 0.5, 0.5);
+    customMaterial.diffuseColor = new Color3(0.8, 0.6, 0.4);
 
     // Apply the material to the mesh
-    this.mesh.material = shaderMaterial;
+    this.mesh.material = customMaterial;
 
-    // Enable mesh to receive shadows properly
+    // Ensure mesh receives shadows and casts them correctly
     if (globalThis.shadowGenerator && this.mesh) {
-      // REMOVED: ShadowDepthWrapper usage as it requires specific shader variables
+      // REMOVED: ShadowDepthWrapper usage (not needed for CustomMaterial)
 
-      // Enable mesh to receive shadows
+      // Enable mesh to receive shadows (StandardMaterial property)
       this.mesh.receiveShadows = true;
 
-      // Make sure this mesh is in the shadow caster list
-      // Only add as shadow caster, not receiver (to prevent self-shadowing)
+      // Add mesh to the shadow caster list
+      // The 'true' argument includes descendants, which is fine here.
       globalThis.shadowGenerator.addShadowCaster(this.mesh, true);
     }
   }
@@ -343,7 +332,7 @@ export default class TerrainChunk {
     if (this.mesh) {
       // Check if we already have this position (to avoid redundant updates)
       if (this.mesh.position && this.mesh.position.equalsWithEpsilon(position, 0.001)) {
-        console.log(`Terrain chunk ${this.x},${this.y} already at position ${position.toString()}`);
+        // console.log(`Terrain chunk ${this.x},${this.y} already at position ${position.toString()}`);
         return;
       }
 
@@ -362,6 +351,10 @@ export default class TerrainChunk {
     }
 
     if (this.mesh) {
+      // Remove from shadow generator if added
+      if (globalThis.shadowGenerator) {
+        globalThis.shadowGenerator.removeShadowCaster(this.mesh, true);
+      }
       this.mesh.dispose();
       this.mesh = null;
     }

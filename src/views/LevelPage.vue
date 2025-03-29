@@ -12,8 +12,6 @@
 
       <MobileJoystick v-if="isMobile"></MobileJoystick>
 
-      <LevelPreview />
-
       <!-- Add our new components -->
       <Hotbar :inInventory="false" />
       <Inventory />
@@ -82,28 +80,56 @@ import { useAppStore } from '@/stores/appStore';
 
 export default defineComponent({
   name: 'game-level',
+  // --- Add data property to store the game instance ---
+  data() {
+    return {
+      gameInstance: null as Game | null, // Store the instance here
+    };
+  },
+  // --- End data property ---
   mounted(): void {
     this.$nextTick(() => {
-      const game = new Game();
-      game.init();
+      // --- Safety check for existing global game ---
+      if (window.game) {
+        console.warn('[LevelPage] Found existing window.game on mount. Attempting cleanup.');
+        window.game.cleanup?.(); // Use optional chaining
+      }
+      // --- End safety check ---
+
+      console.log('[LevelPage] Mounting and initializing game...');
+      // --- Create and store the instance ---
+      this.gameInstance = new Game();
+      this.gameInstance.init();
+      // --- End instance creation/storage ---
     });
   },
+  // --- Add unmounted hook for cleanup ---
+  unmounted(): void {
+    console.log('[LevelPage] Unmounting, ensuring game cleanup...');
+    // Call cleanup on the specific instance created by this component instance
+    this.gameInstance?.cleanup();
+    this.gameInstance = null; // Clear the reference
+
+    // Also try cleaning up the global reference if it somehow still exists
+    if (window.game) {
+      console.warn('[LevelPage] window.game still exists on unmount. Forcing cleanup.');
+      window.game.cleanup?.();
+    }
+  },
+  // --- End unmounted hook ---
   computed: {
     isMobile() {
       const appStore = useAppStore();
       return appStore.isMobile;
     },
     isLoading() {
+      // TODO: Implement actual loading state logic if needed
       return false;
     },
+    // Removed 'finish' computed property as it wasn't defined in data/props
   },
   watch: {
-    finish(value) {
-      if (value) {
-        const appStore = useAppStore();
-        appStore.setPage('MainPage');
-      }
-    },
+    // Removed 'finish' watcher as 'finish' computed property was removed
   },
   components: {
     MobileJoystick,

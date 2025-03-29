@@ -29,13 +29,18 @@ import * as CANNON from 'cannon';
 
 window.CANNON = CANNON;
 
+// Add this outside the class for HMR access
+let currentGameInstance: Game | null = null;
+
 export default class Game {
-  private scene!: BabylonScene;
+  private scene: BabylonScene | undefined; // Allow undefined for cleanup
+  private engine: Engine | undefined; // Allow undefined for cleanup
   private positionSaveInterval?: number;
   private playerSpawner!: PlayerSpawner;
   private debugMode = false;
   private debugVerboseLogging = false;
   private lastEngineDistanceCheckTime = 0;
+  private debugKeyListener: ((e: KeyboardEvent) => void) | null = null;
 
   init() {
     // Apply safety patch to collision system
@@ -56,6 +61,7 @@ export default class Game {
       preserveDrawingBuffer: false,
       stencil: true,
     });
+    this.engine = engine;
     const sceneModel = new GameScene(engine);
     this.scene = sceneModel.babylonScene;
 
@@ -81,7 +87,7 @@ export default class Game {
     sceneModel.load(async () => {
       // Initialize shared player state
       const playerState = SharedPlayerState.getInstance();
-      playerState.setScene(this.scene);
+      playerState.setScene(this.scene!); // Use non-null assertion here as scene is set above
       new Audio();
       // Initialize environment first to ensure shadowGenerator is created
       sceneModel.setEnvironment();
@@ -107,6 +113,10 @@ export default class Game {
       // Add position sanitizer and terrain validation
       this.startPositionPersistence();
     });
+
+    // Make this instance accessible for HMR cleanup
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    currentGameInstance = this;
   }
 
   async initializeGameComponents(spawnPosition: Vector3, callback: any) {
@@ -144,7 +154,8 @@ export default class Game {
           }
 
           // Wait a frame to ensure all meshes are properly initialized
-          this.scene.executeWhenReady(async () => {
+          this.scene?.executeWhenReady(async () => {
+            // Added optional chaining
             // Initialize our crosshair system after player is loaded
             console.log('Initializing crosshair and regolith collection systems');
             try {
@@ -212,7 +223,7 @@ export default class Game {
     this.positionSaveInterval = window.setInterval(() => {
       const store = usePlayerStore();
       if (!store.selfPlayerId) return;
-      const playerMesh = globalThis.scene.getMeshByName('playerFoot_' + store.selfPlayerId);
+      const playerMesh = globalThis.scene?.getMeshByName('playerFoot_' + store.selfPlayerId); // Added optional chaining for safety during cleanup
 
       if (playerMesh) {
         // Save the virtual position only
@@ -223,17 +234,70 @@ export default class Game {
   }
 
   public cleanup(): void {
+    console.log('🧹 Cleaning up game instance for HMR...');
+
+    // 1. Clear intervals
     if (this.positionSaveInterval) {
       clearInterval(this.positionSaveInterval);
       this.positionSaveInterval = undefined;
+      console.log('   - Cleared position save interval');
     }
+
+    // 2. Remove event listeners
+    if (this.debugKeyListener) {
+      window.removeEventListener('keydown', this.debugKeyListener);
+      this.debugKeyListener = null;
+      console.log('   - Removed debug key listener');
+    }
+    // Add removal for any other global listeners added by Game or its components
+
+    // 3. Dispose Babylon Scene
+    if (this.scene) {
+      try {
+        // Stop rendering loop associated with this scene
+        this.engine?.stopRenderLoop(); // Ensure render loop tied to this engine/scene stops
+        this.scene.dispose();
+        console.log('   - Disposed Babylon Scene');
+      } catch (error) {
+        console.error('   - Error disposing scene:', error);
+      }
+      this.scene = undefined; // Help GC - Removed @ts-ignore
+      globalThis.scene = undefined; // Reset global
+    }
+
+    // 4. Dispose Babylon Engine
+    if (this.engine) {
+      try {
+        this.engine.dispose();
+        console.log('   - Disposed Babylon Engine');
+      } catch (error) {
+        console.error('   - Error disposing engine:', error);
+      }
+      this.engine = undefined; // Help GC - Removed @ts-ignore
+    }
+
+    // 5. Clean up other components and globals (add dispose methods if they exist)
+    // if (window.terrainManager?.dispose) window.terrainManager.dispose(); // Example
+    window.terrainManager = undefined;
+    window.miniMap = undefined; // Assuming MiniMap doesn't need explicit dispose
+    window.globalMap = undefined; // Assuming GlobalMap doesn't need explicit dispose
+    globalThis.collisions = undefined;
+    globalThis.environment = undefined; // If environment setup needs cleanup
+    globalThis.assetContainers = []; // Reset asset containers
+    window.game = undefined; // Remove global game reference
+
+    // 6. Clear the HMR instance reference
+    currentGameInstance = null;
+    console.log('🧹 Game cleanup complete.');
   }
 
   /**
    * Setup debug keyboard shortcuts for emergency recovery
    */
   private setupDebugKeys(): void {
-    window.addEventListener('keydown', (e) => {
+    // Define the listener function
+    this.debugKeyListener = (e: KeyboardEvent) => {
+      // Assign to this.debugKeyListener
       // Only in development
       if (import.meta.env.NODE_ENV !== 'production') {
         // Alt+R: Reset terrain system (emergency recovery)
@@ -244,12 +308,12 @@ export default class Game {
 
             const store = usePlayerStore();
 
-            const playerMesh = this.scene.getMeshByName('playerFoot_' + store.selfPlayerId);
+            const playerMesh = this.scene?.getMeshByName('playerFoot_' + store.selfPlayerId); // Added optional chaining
 
             if (playerMesh) {
               const globalPos = WorldManager.toVirtual(playerMesh.position);
               setTimeout(() => {
-                window.terrainManager?.initialize(globalPos);
+                window.terrainManager?.initialize(globalPos); // Added optional chaining
               }, 500);
             }
           }
@@ -286,6 +350,24 @@ export default class Game {
           }
         }
       }
-    });
+    }; // End of listener function definition
+
+    // Add the listener using the stored reference
+    if (this.debugKeyListener) {
+      // Check if listener is defined before adding
+      window.addEventListener('keydown', this.debugKeyListener); // Use the stored listener
+    }
   }
+}
+
+// Add Vite HMR hook (outside the class)
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    console.log('[HMR] Dispose triggered for Game.ts');
+    if (currentGameInstance) {
+      currentGameInstance.cleanup();
+    } else {
+      console.warn('[HMR] No current game instance found to clean up.');
+    }
+  });
 }

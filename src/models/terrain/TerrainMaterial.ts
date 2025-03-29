@@ -1,113 +1,186 @@
 import {
   Scene,
-  ShaderMaterial,
   Texture,
-  Effect,
-  Vector3,
   ShadowGenerator,
-  Color3,
-  DirectionalLight,
+  VertexBuffer, // Import VertexBuffer
+  // Removed: Vector3, Color3, Effect, DirectionalLight as they are not directly needed for this material setup
 } from '@babylonjs/core';
+// Import CustomMaterial from the materials library
+import { CustomMaterial } from '@babylonjs/materials'; // Import materials library for CustomMaterial
 
 export default class TerrainMaterial {
-  private static vertexShaderName = 'terrainVertex';
-  private static fragmentShaderName = 'terrainFragment';
-  private static registered = false;
+  // Removed: vertexShaderName, fragmentShaderName, registered
 
   /**
-   * Creates a terrain material that properly handles shadows and terrain texturing
+   * Creates a terrain material using CustomMaterial that properly handles shadows and terrain texturing
    */
   public static create(
     name: string,
     scene: Scene,
-    shadowGenerator: ShadowGenerator | null
-  ): ShaderMaterial {
-    // Register shaders if not already done
-    if (!this.registered) {
-      this.registerShaders();
-    }
+    shadowGenerator: ShadowGenerator | null // Keep shadowGenerator parameter if needed elsewhere, but not for material setup itself
+  ): CustomMaterial {
+    // Changed return type to CustomMaterial
+    // Removed: Shader registration check
 
-    // Create shader material
-    const material = new ShaderMaterial(
-      name,
-      scene,
-      {
-        vertex: this.vertexShaderName,
-        fragment: this.fragmentShaderName,
-      },
-      {
-        attributes: ['position', 'normal', 'uv'],
-        uniforms: [
-          'world',
-          'worldView',
-          'worldViewProjection',
-          'view',
-          'projection',
-          'heightScale',
-          'time',
-          'lightMatrix',
-          'lightDirection',
-          'lightPosition',
-          'vFogInfos',
-          'vFogColor',
-          'fogDensity',
-        ],
-        samplers: [
-          'mossTex',
-          'bumpyTex',
-          'flatTex',
-          'steepTex',
-          'rockyTex',
-          'snowTex',
-          'shadowSampler',
-        ],
-        // Removed SHADOWDEPTH define which requires specific variables
+    // Create CustomMaterial
+    const material = new CustomMaterial(name, scene); // Changed instantiation to CustomMaterial
+    // REMOVED: (material as any).diffuseTextureEnabled = true; // This didn't reliably enable vDiffuseUV
+
+    // Define Uniforms required by our custom shader code
+    // These AddUniform calls are correct for CustomMaterial
+    material.AddUniform('heightScale', 'float', 256); // Set initial value directly
+    material.AddUniform('mossTex', 'sampler2D', null);
+    material.AddUniform('bumpyTex', 'sampler2D', null);
+    material.AddUniform('flatTex', 'sampler2D', null);
+    material.AddUniform('steepTex', 'sampler2D', null);
+    material.AddUniform('rockyTex', 'sampler2D', null);
+    material.AddUniform('snowTex', 'sampler2D', null);
+
+    // Add uniforms for normal maps
+    material.AddUniform('mossNormal', 'sampler2D', null);
+    material.AddUniform('bumpyNormal', 'sampler2D', null);
+    material.AddUniform('flatNormal', 'sampler2D', null);
+    material.AddUniform('steepNormal', 'sampler2D', null);
+    material.AddUniform('rockyNormal', 'sampler2D', null);
+    material.AddUniform('snowNormal', 'sampler2D', null);
+    material.AddUniform('blendedNormalOutput', 'sampler2D', null);
+
+    // --- REMOVED Vertex Definitions ---
+    // --- REMOVED Vertex MainEnd ---
+    // --- REMOVED Fragment Definitions ---
+
+    // Inject custom fragment shader code for texture blending into the diffuse part
+    // This Fragment_Custom_Diffuse is correct for CustomMaterial
+    material.Fragment_Custom_Diffuse(`
+      // Varyings provided by StandardMaterial/NodeMaterial:
+      // vPositionW: World position of the fragment
+      // vNormalW: World normal of the fragment
+      // vDiffuseUV: Standard UV coordinates (available because material.diffuseTexture is set)
+
+      // Uniforms we defined:
+      // uniform float heightScale; // Now set directly in AddUniform
+      // uniform sampler2D mossTex;
+      // uniform sampler2D bumpyTex;
+      // uniform sampler2D flatTex;
+      // uniform sampler2D steepTex;
+      // uniform sampler2D rockyTex;
+      // uniform sampler2D snowTex;
+      // uniform sampler2D mossNormal;
+      // uniform sampler2D bumpyNormal;
+      // uniform sampler2D flatNormal;
+      // uniform sampler2D steepNormal;
+      // uniform sampler2D rockyNormal;
+      // uniform sampler2D snowNormal;
+
+      // Get height and slope from provided varyings
+      float height = vPositionW.y / heightScale; // Normalized height (0-1 range)
+      float slope = 1.0 - abs(vNormalW.y); // Slope (0 = flat, 1 = vertical)
+
+      // Scale UVs for tiling (use vDiffuseUV, which should now be available)
+      vec2 scaledUV = vDiffuseUV * 8.0;
+
+      // Sample all textures
+      vec4 mossColor = texture2D(mossTex, scaledUV);
+      vec4 bumpyColor = texture2D(bumpyTex, scaledUV);
+      vec4 flatColor = texture2D(flatTex, scaledUV);
+      vec4 steepColor = texture2D(steepTex, scaledUV);
+      vec4 rockyColor = texture2D(rockyTex, scaledUV);
+      vec4 snowColor = texture2D(snowTex, scaledUV);
+      
+      // Sample all normal maps
+      vec3 mossNormalColor = texture2D(mossNormal, scaledUV).rgb;
+      vec3 bumpyNormalColor = texture2D(bumpyNormal, scaledUV).rgb;
+      vec3 flatNormalColor = texture2D(flatNormal, scaledUV).rgb;
+      vec3 steepNormalColor = texture2D(steepNormal, scaledUV).rgb;
+      vec3 rockyNormalColor = texture2D(rockyNormal, scaledUV).rgb;
+      vec3 snowNormalColor = texture2D(snowNormal, scaledUV).rgb;
+
+      // Calculate weights based on terrain features (same logic as before)
+      float flatWeight = max(0.0, 1.0 - slope * 5.0);
+      float steepWeight = smoothstep(0.2, 0.5, slope);
+      float rockyWeight = smoothstep(0.5, 0.7, slope);
+      float snowWeight = smoothstep(0.8, 1.0, height);
+      float bumpyWeight = smoothstep(0.1, 0.3, height) * (1.0 - steepWeight);
+      // Adjust mossWeight calculation slightly for clarity
+      float otherWeights = flatWeight + steepWeight + rockyWeight + snowWeight + bumpyWeight;
+      float mossWeight = max(0.0, 1.0 - otherWeights); // Use remaining weight
+
+      // Normalize weights (ensure they sum to 1)
+      float totalWeight = mossWeight + flatWeight + steepWeight + rockyWeight + snowWeight + bumpyWeight;
+      // Avoid division by zero if totalWeight is somehow zero
+      if (totalWeight > 0.0001) { // Use a small epsilon for safety
+          mossWeight /= totalWeight;
+          flatWeight /= totalWeight;
+          steepWeight /= totalWeight;
+          rockyWeight /= totalWeight;
+          snowWeight /= totalWeight;
+          bumpyWeight /= totalWeight;
+      } else {
+          mossWeight = 1.0; // Default to moss if weights are zero
+          flatWeight = 0.0;
+          steepWeight = 0.0;
+          rockyWeight = 0.0;
+          snowWeight = 0.0;
+          bumpyWeight = 0.0;
       }
-    );
 
-    // Add error callback for shader compilation
-    // material.onCompiled = function (effect) {
-    //   console.log('Terrain shader compiled successfully');
-    // };
+      // Blend diffuse textures
+      vec3 blendedColor =
+        mossColor.rgb * mossWeight +
+        flatColor.rgb * flatWeight +
+        bumpyColor.rgb * bumpyWeight +
+        steepColor.rgb * steepWeight +
+        rockyColor.rgb * rockyWeight +
+        snowColor.rgb * snowWeight;
+        
+      // Blend normal textures using the same weights
+      vec3 blendedNormal =
+        mossNormalColor * mossWeight +
+        flatNormalColor * flatWeight +
+        bumpyNormalColor * bumpyWeight +
+        steepNormalColor * steepWeight +
+        rockyNormalColor * rockyWeight +
+        snowNormalColor * snowWeight;
+        
+      // Convert from [0,1] range to [-1,1] range for normal maps
+      blendedNormal = blendedNormal * 2.0 - 1.0;
+      
+      // Store the blended normal in the blendedNormalOutput uniform
+      // The normal map will be applied outside the shader via the bumpTexture
+      
+      // Assign the final blended color to diffuseColor.rgb
+      // StandardMaterial will then apply lighting, shadows, fog etc. to this base color.
+      diffuseColor.rgb = blendedColor;
+    `);
 
-    // material.onError = function (effect, errors) {
-    //   console.error('Terrain shader compilation errors:', errors);
-    // };
+    // --- REMOVED UseStandardVertexShader = true ---
+    // CustomMaterial inherently uses the standard vertex shader logic.
 
-    // Set textures
+    // Set textures using the standard method (should work now if compilation succeeds)
     this.setTextures(material, scene);
 
-    // Set parameters
-    material.setFloat('heightScale', 512);
-
-    // Set up shadow map
-    if (shadowGenerator) {
-      const shadowMap = shadowGenerator.getShadowMap();
-      if (shadowMap && shadowMap.getScene()) {
-        material.setTexture('shadowSampler', shadowMap);
-        material.setMatrix('lightMatrix', shadowGenerator.getTransformMatrix());
-      }
-
-      // Set light direction for shader
-      const light = scene.getLightById('MainDirectionLight');
-      if (light && light.getClassName() === 'DirectionalLight') {
-        material.setVector3('lightDirection', (light as DirectionalLight).direction);
-        material.setVector3('lightPosition', (light as DirectionalLight).position);
+    // Check if material compiled successfully after setup
+    // Use a timeout to check readiness, as compilation might be async
+    setTimeout(() => {
+      if (!material.isReady()) {
+        console.error(`[TerrainMaterial] Material '${name}' failed to compile after setup.`);
+        // Optional: Fallback logic here if needed, e.g., apply a simple StandardMaterial
+        // const fallbackMat = new StandardMaterial(name + "_fallback", scene);
+        // fallbackMat.diffuseColor = new Color3(0.5, 0.5, 0.5); // Grey
+        // if (material.getMesh()) { // Check if mesh is associated
+        //     material.getMesh().material = fallbackMat;
+        // }
       } else {
-        material.setVector3('lightDirection', new Vector3(-1, -2, -1));
-        material.setVector3('lightPosition', new Vector3(100, 150, 100));
+        console.log(`[TerrainMaterial] Material '${name}' appears ready.`);
       }
-    }
-
-    // Set up fog
-    material.setArray3('vFogInfos', [scene.fogMode, scene.fogStart, scene.fogEnd]);
-    material.setFloat('fogDensity', scene.fogDensity);
-    material.setColor3('vFogColor', scene.fogColor);
+    }, 100); // Check after a short delay
 
     return material;
   }
 
-  private static setTextures(material: ShaderMaterial, scene: Scene): void {
+  // Updated setTextures to assign textures directly to material properties
+  private static setTextures(material: CustomMaterial, scene: Scene): void {
+    // Changed type hint to CustomMaterial
     const texturePaths = [
       '/resources/graphics/textures/mars/Terrain0.jpg', // Moss
       '/resources/graphics/textures/mars/Terrain1.jpg', // Small bumpy
@@ -117,242 +190,121 @@ export default class TerrainMaterial {
       '/resources/graphics/textures/mars/Terrain5.jpg', // High elevation
     ];
 
+    // Normal Textures
+
+    const normalTexturePaths = [
+      '/resources/graphics/textures/mars/Terrain0_normal.jpg', // Moss
+      '/resources/graphics/textures/mars/Terrain1_normal.jpg', // Small bumpy
+      '/resources/graphics/textures/mars/Terrain2_normal.jpg', // Flat areas
+      '/resources/graphics/textures/mars/Terrain3_normal.jpg', // Steeper edges
+      '/resources/graphics/textures/mars/Terrain4_normal.jpg', // Rocky
+      '/resources/graphics/textures/mars/Terrain5_normal.jpg', // High elevation
+    ];
+
     const textureNames = ['mossTex', 'bumpyTex', 'flatTex', 'steepTex', 'rockyTex', 'snowTex'];
+    const normalTextureNames = [
+      'mossNormal',
+      'bumpyNormal',
+      'flatNormal',
+      'steepNormal',
+      'rockyNormal',
+      'snowNormal',
+    ];
 
     texturePaths.forEach((path, index) => {
+      const textureName = textureNames[index];
       const texture = new Texture(
         path,
         scene,
-        true, // Set to true for noMipmap to improve performance
-        false, // Set to false for samplingMode
-        Texture.BILINEAR_SAMPLINGMODE, // Sampling mode
+        false, // noMipmap - Changed to false to enable mipmaps
+        true, // invertY
+        Texture.TRILINEAR_SAMPLINGMODE, // Sampling mode - Changed to TRILINEAR for mipmaps
         () => {
           texture.wrapU = Texture.WRAP_ADDRESSMODE;
           texture.wrapV = Texture.WRAP_ADDRESSMODE;
-          // Ensure texture is ready for rendering
           texture.hasAlpha = false;
+          // console.log(`[TerrainMaterial] Texture loaded: ${path}`); // Optional: confirm texture load
         },
         (message) => {
           console.error(`Failed to load texture ${path}:`, message);
         }
       );
-      material.setTexture(textureNames[index], texture);
+
+      // Assign the texture directly to the material property matching the uniform name.
+      // CustomMaterial should handle linking this during its internal processes.
+      if (texture && texture.isReady()) {
+        (material as any)[textureName] = texture;
+        // console.log(`[TerrainMaterial] Assigned texture to material property: ${textureName}`);
+      } else if (texture) {
+        // If texture is not ready yet, assign it once it loads
+        texture.onLoadObservable.addOnce(() => {
+          (material as any)[textureName] = texture;
+          // console.log(`[TerrainMaterial] Assigned texture to material property (onLoad): ${textureName}`);
+        });
+      } else {
+        console.error(`[TerrainMaterial] Texture object for ${textureName} is invalid.`);
+      }
+
+      // ALSO: Assign one texture (e.g., flatTex) to the standard diffuseTexture slot
+      // to ensure the vDiffuseUV varying is generated and passed by StandardMaterial.
+      if (textureName === 'flatTex') {
+        if (texture && texture.isReady()) {
+          material.diffuseTexture = texture;
+        } else if (texture) {
+          texture.onLoadObservable.addOnce(() => {
+            material.diffuseTexture = texture;
+          });
+        }
+      }
     });
-  }
 
-  private static registerShaders(): void {
-    // Register vertex shader
-    Effect.ShadersStore[this.vertexShaderName + 'VertexShader'] = this.getVertexShader();
-
-    // Register fragment shader
-    Effect.ShadersStore[this.fragmentShaderName + 'FragmentShader'] = this.getFragmentShader();
-
-    this.registered = true;
-  }
-
-  private static getVertexShader(): string {
-    return `
-      precision highp float;
-      
-      // Attributes
-      attribute vec3 position;
-      attribute vec3 normal;
-      attribute vec2 uv;
-      
-      // Uniforms
-      uniform mat4 world;
-      uniform mat4 worldView;
-      uniform mat4 worldViewProjection;
-      uniform float heightScale;
-      
-      // Shadow uniforms
-      uniform mat4 lightMatrix;
-      
-      // Varying
-      varying vec2 vUV;
-      varying vec3 vWorldPosition;
-      varying vec3 vNormal;
-      varying float vHeight;
-      varying float vSlope;
-      varying vec4 vPositionFromLight;
-      varying float fFogDistance;
-      
-      void main() {
-        vUV = uv;
-        
-        // Get local position and apply world transformation
-        vec4 worldPosition = world * vec4(position, 1.0);
-        vWorldPosition = worldPosition.xyz;
-        
-        // Transform normal to world space and normalize
-        vNormal = normalize((world * vec4(normal, 0.0)).xyz);
-        
-        // Calculate normalized height (0-1 range)
-        vHeight = position.y / heightScale;
-        
-        // Calculate slope based on normal (1.0 = vertical, 0.0 = flat)
-        vSlope = 1.0 - abs(vNormal.y);
-        
-        // Calculate position from light's perspective for shadows
-        vPositionFromLight = lightMatrix * worldPosition;
-        
-        // Calculate fog distance
-        fFogDistance = length((worldView * vec4(position, 1.0)).xyz);
-        
-        // Output position
-        gl_Position = worldViewProjection * vec4(position, 1.0);
-      }
-    `;
-  }
-
-  private static getFragmentShader(): string {
-    return `
-      precision highp float;
-      
-      // Varying inputs from vertex shader
-      varying vec2 vUV;
-      varying vec3 vWorldPosition;
-      varying vec3 vNormal;
-      varying vec3 vNormalW; // Added for shadow system
-      varying float vHeight;
-      varying float vSlope;
-      varying vec4 vPositionFromLight;
-      varying float fFogDistance;
-      
-      // Textures
-      uniform sampler2D mossTex;
-      uniform sampler2D bumpyTex;
-      uniform sampler2D flatTex;
-      uniform sampler2D steepTex;
-      uniform sampler2D rockyTex;
-      uniform sampler2D snowTex;
-      
-      // Shadow uniforms
-      uniform sampler2D shadowSampler;
-      uniform vec3 lightDirection;
-      uniform vec3 lightPosition;
-      
-      // Fog settings
-      uniform vec3 vFogInfos;
-      uniform vec3 vFogColor;
-      uniform float fogDensity;
-      
-      // Parameters
-      uniform float time;
-      
-      // Shadow calculation function with PCF (Percentage Closer Filtering)
-      float computeShadow(vec4 vPositionFromLight) {
-        // Transform to NDC space
-        vec3 depthCoord = vPositionFromLight.xyz / vPositionFromLight.w;
-        
-        // Convert to texture space [0,1]
-        depthCoord = depthCoord * 0.5 + 0.5;
-        
-        // Check if outside shadow map
-        if (depthCoord.x < 0.0 || depthCoord.x > 1.0 || 
-            depthCoord.y < 0.0 || depthCoord.y > 1.0) {
-          return 1.0; // Fully lit
+    normalTexturePaths.forEach((path, index) => {
+      const normalTextureName = normalTextureNames[index];
+      const normalTexture = new Texture(
+        path,
+        scene,
+        false, // noMipmap - Changed to false to enable mipmaps
+        true, // invertY
+        Texture.TRILINEAR_SAMPLINGMODE, // Sampling mode - Changed to TRILINEAR for mipmaps
+        () => {
+          normalTexture.wrapU = Texture.WRAP_ADDRESSMODE;
+          normalTexture.wrapV = Texture.WRAP_ADDRESSMODE;
+          normalTexture.hasAlpha = false;
+          // normalTexture.coordinatesMode = Texture.SPHERICAL_MODE; // Set coordinates mode to spherical
+          // console.log(`[TerrainMaterial] Normal texture loaded: ${path}`); // Optional: confirm normal texture load
+        },
+        (message) => {
+          console.error(`Failed to load normal texture ${path}:`, message);
         }
-        
-        // Shadow bias to prevent shadow acne
-        // Adjust based on surface normal facing light
-        float bias = 0.005 * (1.0 - dot(vNormal, -normalize(lightDirection)));
-        bias = clamp(bias, 0.0005, 0.015);
-        
-        // Higher quality PCF (5x5 kernel)
-        float shadow = 0.0;
-        float texelSize = 1.0/2048.0; // Shadow map resolution
-        
-        for(float x = -2.0; x <= 2.0; x += 1.0) {
-          for(float y = -2.0; y <= 2.0; y += 1.0) {
-            float pcfDepth = texture2D(shadowSampler, depthCoord.xy + vec2(x, y) * texelSize).r;
-            shadow += depthCoord.z - bias > pcfDepth ? 0.0 : 1.0;
-          }
-        }
-        
-        shadow /= 25.0; // 5x5 samples
-        return shadow;
+      );
+
+      // Assign the normal texture directly to the material property matching the uniform name.
+      // CustomMaterial should handle linking this during its internal processes.
+      if (normalTexture && normalTexture.isReady()) {
+        (material as any)[normalTextureName] = normalTexture;
+        // console.log(`[TerrainMaterial] Assigned normal texture to material property: ${normalTextureName}`);
+      } else if (normalTexture) {
+        // If normal texture is not ready yet, assign it once it loads
+        normalTexture.onLoadObservable.addOnce(() => {
+          (material as any)[normalTextureName] = normalTexture;
+          // console.log(`[TerrainMaterial] Assigned normal texture to material property (onLoad): ${normalTextureName}`);
+        });
+      } else {
+        console.error(
+          `[TerrainMaterial] Normal texture object for ${normalTextureName} is invalid.`
+        );
       }
-      
-      // Fog calculation
-      float computeFog() {
-        float fogMode = vFogInfos.x;
-        float fogStart = vFogInfos.y;
-        float fogEnd = vFogInfos.z;
-        
-        float fogFactor = 1.0;
-        
-        if (fogMode == 1.0) { // LINEAR
-          fogFactor = (fogEnd - fFogDistance) / (fogEnd - fogStart);
-        } else if (fogMode == 2.0) { // EXP
-          fogFactor = 1.0 / pow(2.71828, fFogDistance * fogDensity);
-        } else if (fogMode == 3.0) { // EXP2
-          fogFactor = 1.0 / pow(2.71828, fFogDistance * fFogDistance * fogDensity * fogDensity);
-        }
-        
-        return clamp(fogFactor, 0.0, 1.0);
-      }
-      
-      void main() {
-        // Scale UVs for better tiling (adjust based on terrain size)
-        vec2 scaledUV = vUV * 8.0;
-        
-        // Sample all textures
-        vec4 mossColor = texture2D(mossTex, scaledUV);
-        vec4 bumpyColor = texture2D(bumpyTex, scaledUV);
-        vec4 flatColor = texture2D(flatTex, scaledUV);
-        vec4 steepColor = texture2D(steepTex, scaledUV);
-        vec4 rockyColor = texture2D(rockyTex, scaledUV);
-        vec4 snowColor = texture2D(snowTex, scaledUV);
-        
-        // Calculate weights based on terrain features
-        float flatWeight = max(0.0, 1.0 - vSlope * 5.0); // Flat areas
-        float steepWeight = smoothstep(0.2, 0.5, vSlope); // Medium slopes
-        float rockyWeight = smoothstep(0.5, 0.7, vSlope); // Steep slopes
-        float snowWeight = smoothstep(0.8, 1.0, vHeight); // High areas
-        float bumpyWeight = smoothstep(0.1, 0.3, vHeight) * (1.0 - steepWeight); // Low-medium areas
-        float mossWeight = max(0.0, 1.0 - bumpyWeight - flatWeight - steepWeight - rockyWeight - snowWeight); // Default texture
-        
-        // Normalize weights
-        float totalWeight = mossWeight + flatWeight + steepWeight + rockyWeight + snowWeight + bumpyWeight;
-        mossWeight /= totalWeight;
-        flatWeight /= totalWeight;
-        steepWeight /= totalWeight;
-        rockyWeight /= totalWeight;
-        snowWeight /= totalWeight;
-        bumpyWeight /= totalWeight;
-        
-        // Blend textures
-        vec4 finalColor = 
-          mossColor * mossWeight +
-          flatColor * flatWeight +
-          bumpyColor * bumpyWeight +
-          steepColor * steepWeight +
-          rockyColor * rockyWeight +
-          snowColor * snowWeight;
-        
-        // Calculate lighting
-        // Directional light contribution
-        float NdotL = max(0.0, dot(vNormal, -normalize(lightDirection)));
-        
-        // Ambient light factor (minimum light)
-        float ambientFactor = 0.3;
-        
-        // Calculate shadow
-        float shadow = computeShadow(vPositionFromLight);
-        
-        // Combined lighting
-        float lightIntensity = ambientFactor + (1.0 - ambientFactor) * NdotL;
-        
-        // Apply lighting
-        finalColor.rgb *= lightIntensity;
-        
-        // Apply fog
-        float fogFactor = computeFog();
-        finalColor.rgb = mix(vFogColor, finalColor.rgb, fogFactor);
-        
-        gl_FragColor = finalColor;
-      }
-    `;
+    });
+
+    // Set up proper specular properties for higher quality highlights
+    material.specularPower = 32; // Higher value means sharper, more focused highlights
+    // Enable normal mapping in the material
+    material.useParallax = true;
+    material.useParallaxOcclusion = true;
+    material.parallaxScaleBias = 0.01; // Parallax effect amount
+
+    material.roughness = 0.5;
   }
+
+  // Removed: registerShaders, getVertexShader, getFragmentShader
 }

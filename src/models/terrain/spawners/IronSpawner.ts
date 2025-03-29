@@ -29,6 +29,13 @@ export class IronSpawner extends Spawner {
   private meshesAwaitingPhysics: Array<{ mesh: Mesh; isLoose: boolean }> = [];
   private physicsCheckInterval: number | null = null;
 
+  // Configure probabilities and quantities
+  private PROBABILITY = {
+    LOOSE_IRON: 0.8, // 80% chance for loose iron pieces
+    DEPOSIT_MIN_QUANTITY: 30,
+    DEPOSIT_MAX_QUANTITY: 120,
+  };
+
   constructor(scene: Scene) {
     super(scene);
     this.prefabPath = '/resources/graphics/prefabs/resources/iron.glb'; // Path to iron ore model
@@ -153,23 +160,30 @@ export class IronSpawner extends Spawner {
     const posX = padding + rng() * (width - padding * 2);
     const posY = padding + rng() * (height - padding * 2);
 
-    // Use noise for height and other properties
-    // const noiseVal =
-    //   noise3D(chunkX + posX / width, chunkY + posY / height, index * 0.1) * 0.5 + 0.5;
-
     // Iron deposits rise above the terrain
-    const posZ = 5; // 2-20 units above ground
+
+    // Generate a value between 0-1 to determine loose vs deposit
+    const randomValue = rng();
 
     // Determine quantity and whether it's a loose piece
-    const quantity =
-      rng() < 0.8
-        ? 1 // 80% chance for loose pieces
-        : 30 + Math.floor(rng() * 90); // 30-120 for deposits
+    // Use clearly defined probability constant
+    const isLoose = randomValue < this.PROBABILITY.LOOSE_IRON;
 
-    const loose = quantity === 1;
+    const posZ = isLoose ? 0 : 1; // Units above ground
+
+    const quantity = isLoose
+      ? 1 // Loose pieces always have quantity 1
+      : this.PROBABILITY.DEPOSIT_MIN_QUANTITY +
+        Math.floor(
+          rng() * (this.PROBABILITY.DEPOSIT_MAX_QUANTITY - this.PROBABILITY.DEPOSIT_MIN_QUANTITY)
+        );
 
     // Create node ID
     const nodeId = `${this.getResourceType()}_${chunkX}_${chunkY}_${index}`;
+
+    // console.log(
+    //   `Creating iron node: loose=${isLoose}, quantity=${quantity}, random=${randomValue}, threshold=${this.PROBABILITY.LOOSE_IRON}`
+    // );
 
     // Create and return the resource node
     return {
@@ -180,7 +194,7 @@ export class IronSpawner extends Spawner {
       y: posY,
       z: posZ,
       mined: false,
-      loose,
+      loose: isLoose,
     };
   }
 
@@ -301,10 +315,10 @@ export class IronSpawner extends Spawner {
       if (node.loose) {
         if (this.preloadedModel) {
           // Use the prefab model for loose pieces
-          console.log(`Creating loose iron using prefab model from ${this.prefabPath}`);
           mesh = this.preloadedModel.clone(`resource_${node.nodeId}`) as Mesh;
           mesh.scaling.setAll(0.3); // Small scale for loose pieces
           mesh.setEnabled(true); // Make sure it's visible
+          console.log(`Loose iron mesh created with ID: resource_${node.nodeId}`);
         } else {
           console.warn(`No preloaded model available for loose iron, using fallback`);
           // Fallback to procedural if prefab isn't available
@@ -411,25 +425,80 @@ export class IronSpawner extends Spawner {
     }
   }
 
+  /**
+   * Handle mining or collecting iron resources
+   */
   protected async handleResourceInteraction(
     node: ResourceNode,
     playerId: string
   ): Promise<boolean> {
-    // Create iron item
-    const ironAmount = node.loose ? 1 : 2;
-    const iron = new Iron(ironAmount);
+    // For loose iron, collect the whole item
+    if (node.loose) {
+      // Create iron item (1 piece)
+      const iron = new Iron(1);
 
-    // Add to player inventory
-    await this.inventoryStore.addItem(playerId, iron.serialize());
+      // Add to player inventory
+      await this.inventoryStore.addItem(playerId, iron.serialize());
 
-    return true;
+      // Mark as mined so it disappears
+      node.mined = true;
+
+      return true;
+    } else {
+      // For deposits, mine 1 unit each time and reduce the quantity
+      if (node.quantity > 0) {
+        // Create iron item (1 piece per mining action)
+        const iron = new Iron(1);
+
+        // Add to player inventory
+        await this.inventoryStore.addItem(playerId, iron.serialize());
+
+        // Reduce the deposit quantity
+        node.quantity -= 1;
+
+        console.log(`Mined iron deposit, remaining quantity: ${node.quantity}`);
+
+        // Mark as mined only when fully depleted
+        if (node.quantity <= 0) {
+          node.mined = true;
+        }
+
+        return true;
+      }
+
+      return false;
+    }
   }
 
+  /**
+   * Update the mesh to reflect current node state
+   */
   updateMesh(mesh: Mesh, node: ResourceNode): void {
-    // Only adjust scale if it's not a loose piece
-    if (!node.loose && mesh) {
-      const scale = 0.5 + (node.quantity / 120) * 1.5;
-      mesh.scaling.setAll(scale);
+    // Only adjust scale if it's not a loose piece and has valid quantity
+    if (!node.loose && mesh && node.quantity > 0) {
+      // Calculate scale based on remaining quantity
+      // Full deposit (max quantity) = 100% size, empty = 0% size
+      const maxQuantity = this.PROBABILITY.DEPOSIT_MAX_QUANTITY;
+      const minQuantity = this.PROBABILITY.DEPOSIT_MIN_QUANTITY;
+      const quantityRange = maxQuantity - minQuantity;
+
+      // Scale from 30% to 100% based on quantity
+      const minScale = 0.3; // Minimum size at lowest quantity
+      const maxScale = 1.0; // Maximum size at highest quantity
+
+      // Calculate scale factor (quantity percent from min-max range)
+      const normalizedQuantity = Math.max(0, node.quantity - minQuantity) / quantityRange;
+      const scaleFactor = minScale + normalizedQuantity * (maxScale - minScale);
+
+      // Apply scale to the mesh based on remaining quantity
+      mesh.scaling.setAll(scaleFactor);
+
+      console.log(`Updated iron deposit mesh scale: ${scaleFactor} for quantity: ${node.quantity}`);
+    }
+
+    // Hide mesh if fully mined
+    if (node.mined) {
+      mesh.setEnabled(false);
     }
   }
 
