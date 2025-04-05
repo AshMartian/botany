@@ -43,7 +43,7 @@ async function saveToIndexedDB(playerId: string, items: InventoryItemWithPositio
 
     // Serialize items before storing
     const serializedItems = items.map((item) => JSON.parse(JSON.stringify(item)));
-    // console.log('Saving inventory to IndexedDB:', serializedItems);
+    console.log('Saving inventory to IndexedDB:', serializedItems);
     await db.put(STORE_NAME, serializedItems, playerId);
   } catch (e) {
     console.warn('Failed to save inventory to IndexedDB:', e);
@@ -235,6 +235,8 @@ export const useInventoryStore = defineStore('inventory', {
       // Save inventory state to IndexedDB
       if (playerId) {
         await saveToIndexedDB(playerId, this.items);
+      } else {
+        console.warn('Player ID not found. Cannot save inventory to IndexedDB.');
       }
     },
 

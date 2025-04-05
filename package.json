@@ -16,9 +16,12 @@
     "validate": "tsc --noEmit --project ./tsconfig.json && npm run lint && npm run test:ci"
   },
   "dependencies": {
-    "@babylonjs/inspector": "^6.25.0",
-    "@babylonjs/loaders": "^6.25.0",
-    "@babylonjs/node-editor": "^6.35.0",
+    "@babylonjs/core": "^6.37.0",
+    "@babylonjs/gui": "^6.37.0",
+    "@babylonjs/inspector": "^6.37.0",
+    "@babylonjs/loaders": "^6.37.0",
+    "@babylonjs/materials": "^6.37.0",
+    "@babylonjs/node-editor": "^6.37.0",
     "@types/lodash": "^4.14.182",
     "@types/node": "^18.15.10",
     "@types/uuid": "^9.0.1",
@@ -47,8 +50,6 @@
     "vue-i18n": "^9.5.0"
   },
   "devDependencies": {
-    "@babylonjs/core": "^6.25.0",
-    "@babylonjs/materials": "^6.25.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/vue": "^8.1.0",
     "@types/cannon": "^0.1.13",

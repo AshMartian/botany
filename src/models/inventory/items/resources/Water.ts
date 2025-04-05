@@ -6,7 +6,7 @@ export class Water extends Resource implements InventoryItemDefinition {
       quantity,
       id: 'water',
       name: 'Water',
-      iconPath: '/assets/textures/water.png',
+      iconPath: '/resources/graphics/textures/items/water.jpg',
       type: 'liquid',
       maxStackSize: 20,
       stackable: true,

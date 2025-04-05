@@ -16,6 +16,13 @@ const messages = {
       points: 'points',
       back_to_savepoint: 'back to savepoint',
     },
+    // Add build menu translations here for consistency
+    buildMenu: {
+      title: 'Build Menu',
+      noBlueprints: 'No blueprints available.',
+      close: 'Close',
+      noCost: 'Free',
+    },
   },
   ru: {
     message: {
@@ -27,12 +34,21 @@ const messages = {
       are_you_ready: 'вы готовы?',
       back_to_savepoint: 'вернуться к точки сохранения',
     },
+    // Add Russian build menu translations
+    buildMenu: {
+      title: 'Меню строительства',
+      noBlueprints: 'Нет доступных чертежей.',
+      close: 'Закрыть',
+      noCost: 'Бесплатно',
+    },
   },
 };
 
 const i18n = createI18n({
-  locale: 'en',
-  messages,
+  legacy: false, // <-- Add this line
+  locale: 'en', // set locale
+  fallbackLocale: 'en', // set fallback locale
+  messages, // set locale messages
 });
 const pinia = createPinia();
 

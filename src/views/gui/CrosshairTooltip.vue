@@ -1,9 +1,9 @@
 `
 <template>
-  <div class="crosshair-tooltip" v-if="interactionText">
-    <div class="tooltip-content">
-      <span class="key">{{ interactionKey || 'F' }}</span>
-      <span class="text">{{ interactionText }}</span>
+  <div class="crosshair-tooltip" v-if="interactions.length > 0">
+    <div class="tooltip-content" v-for="(interaction, index) in interactions" :key="index">
+      <span class="key">{{ interaction.key }}</span>
+      <span class="text">{{ interaction.text }}</span>
     </div>
   </div>
 </template>
@@ -19,8 +19,7 @@ export default defineComponent({
     const store = usePlayerStore();
 
     return {
-      interactionText: computed(() => store.interaction?.text),
-      interactionKey: computed(() => store.interaction?.key),
+      interactions: computed(() => store.interactions),
     };
   },
 });
@@ -47,6 +46,11 @@ export default defineComponent({
     display: flex;
     align-items: center;
     gap: 8px;
+    margin-bottom: 4px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
 
     .key {
       background: rgba(255, 255, 255, 0.2);

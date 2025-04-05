@@ -68,10 +68,11 @@ export interface PlayerState {
   players: Player[];
   globalPosition?: { x: number; z: number };
   settings: GameSettings;
-  interaction?: {
+  interactions: {
     text: string;
     key: string;
-  };
+    priority: number;
+  }[];
   subscribers: { [key: string]: PlayerSubscriptionFunction[] };
 }
 
@@ -115,7 +116,7 @@ export const usePlayerStore = defineStore('player', {
     selfPlayer: undefined,
     players: [],
     globalPosition: undefined,
-    interaction: undefined,
+    interactions: [],
     settings: {
       speed: 0.06,
       speedSprint: 0.09,
@@ -145,7 +146,7 @@ export const usePlayerStore = defineStore('player', {
     gameSettings: (state) => state.settings,
 
     // Get player interaction
-    playerInteraction: (state) => state.interaction,
+    playerInteraction: (state) => state.interactions,
 
     // Get equipped tool ID for a player
     getEquippedToolId: (state) => (playerId: string) => {
@@ -304,8 +305,28 @@ export const usePlayerStore = defineStore('player', {
       }
     },
 
-    setInteraction(text: string, key: string) {
-      this.interaction = { text, key };
+    setInteraction(text: string, key: string, priority = 0) {
+      // Find if we already have an interaction with the same key
+      const existingIndex = this.interactions.findIndex((interaction) => interaction.key === key);
+
+      if (existingIndex >= 0) {
+        // Update existing interaction with same key
+        this.interactions[existingIndex] = { text, key, priority };
+      } else {
+        // Add new interaction
+        this.interactions.push({ text, key, priority });
+      }
+
+      // Sort interactions by priority (higher numbers first)
+      this.interactions.sort((a, b) => b.priority - a.priority);
+    },
+
+    clearInteractions() {
+      this.interactions = [];
+    },
+
+    removeInteraction(key: string) {
+      this.interactions = this.interactions.filter((interaction) => interaction.key !== key);
     },
 
     // Add points to a player

@@ -1,6 +1,17 @@
-import { Color3, Engine, Vector3, Scene as BabylonScene, CannonJSPlugin } from '@babylonjs/core';
+import {
+  Color3,
+  Engine,
+  Vector3,
+  Scene as BabylonScene,
+  CannonJSPlugin,
+  Quaternion,
+  AbstractMesh, // Added AbstractMesh
+  Mesh, // Added Mesh for instanceof check
+  AssetContainer, // Added AssetContainer
+} from '@babylonjs/core'; // Added Quaternion
 import { usePlayerStore } from '@/stores/playerStore';
 import { useInventoryStore } from '@/stores/inventoryStore';
+import { useBuildingStore } from '@/stores/buildingStore'; // <-- ADD THIS IMPORT
 import PlayerSpawner from '@/models/playerOnline/PlayerSpawner';
 import SharedPlayerState from '@/models/playerOnline/SharedPlayerState';
 import WorldManager from '@/models/terrain/WorldManager';
@@ -22,6 +33,8 @@ import Prefabs from '@/models/scene/Prefabs';
 import TerrainManager from '@/models/terrain/TerrainManager';
 import MiniMap from '@/models/terrain/MiniMap';
 import GlobalMap from '@/models/terrain/GlobalMap';
+import BuildingPlacementService from '@/services/BuildingPlacementService'; // <-- ADD THIS IMPORT
+import { PlacedBuildingData } from '@/stores/buildingStore'; // Import the type
 // Import our new services
 import crosshairService from '@/services/CrosshairService';
 import regolithCollector from '@/services/RegolithCollector';
@@ -29,6 +42,7 @@ import * as CANNON from 'cannon';
 
 window.CANNON = CANNON;
 
+import { watch, WatchStopHandle } from 'vue'; // <-- Import watch and WatchStopHandle
 // Add this outside the class for HMR access
 let currentGameInstance: Game | null = null;
 
@@ -40,6 +54,8 @@ export default class Game {
   private debugMode = false;
   private debugVerboseLogging = false;
   private lastEngineDistanceCheckTime = 0;
+  private buildingPlacementService: BuildingPlacementService | null = null; // <-- ADD THIS
+  private buildingWatcher: WatchStopHandle | null = null; // <-- ADD THIS for watcher cleanup
   private debugKeyListener: ((e: KeyboardEvent) => void) | null = null;
 
   init() {
@@ -52,8 +68,13 @@ export default class Game {
     store.setPlayerId(playerId);
     store.addPlayer(playerId, skinColor);
 
+    // --- Initialize Inventory and Building Stores ---
     const inventoryStore = useInventoryStore();
     inventoryStore.initializeInventory(playerId);
+
+    const buildingStore = useBuildingStore(); // <-- GET BUILDING STORE INSTANCE
+    buildingStore.initializeBuildingStore(); // <-- INITIALIZE IT (loads from DB)
+    // --- End Store Initialization ---
 
     globalThis.assetContainers = [];
     const canvas = Canvas.setCanvas();
@@ -96,22 +117,30 @@ export default class Game {
       const savedPosition = this.playerSpawner.getSavedPosition();
       const spawnPosition = savedPosition || new Vector3(30, 0, 30);
 
-      // Then initialize game classes and characters
-      // await this.initializeGameComponents(spawnPosition, () => {
-      // const serverClient = new ServerClient(playerId);
-      // serverClient.init();
-
-      // store.ad((playerId: string) => {
-      //   new Player(playerId);
-      // });
-      // });
-
-      this.initializeGameComponents(spawnPosition, () => {
-        // Nothing for now
+      await this.initializeGameComponents(spawnPosition, async () => {
+        // --- Spawn Placed Buildings ---
+        // This needs to happen *after* prefabs/assets might be loaded
+        // and the scene is ready. Placing it here or in initializeGameComponents
+        // might be suitable depending on asset loading strategy.
+        await this.spawnPlacedBuildings(); // Make async and await
+        // --- End Spawn ---
       });
 
       // Add position sanitizer and terrain validation
       this.startPositionPersistence();
+
+      // Add regular terrain update check
+      this.scene!.registerBeforeRender(() => {
+        // Get current player position for terrain updates
+        const store = usePlayerStore();
+        if (!store.selfPlayerId) return;
+
+        const playerMesh = this.scene!.getMeshByName('playerFoot_' + store.selfPlayerId);
+        if (playerMesh && window.terrainManager) {
+          // Update terrain chunks based on current player position
+          window.terrainManager.updateChunks(playerMesh.position);
+        }
+      });
     });
 
     // Make this instance accessible for HMR cleanup
@@ -126,6 +155,7 @@ export default class Game {
     }
 
     RegisterTagsExtension();
+    Prefabs.initialize(window.scene); // <-- INITIALIZE PREFABS
     new DevMode();
     globalThis.collisions = new Collisions();
 
@@ -166,10 +196,36 @@ export default class Game {
               console.error('Failed to initialize crosshair service:', error);
             }
 
-            callback();
+            // --- Initialize Building Placement Service ---
+            // --- VERIFIED: Initialized after scene is ready ---
+            this.buildingPlacementService = new BuildingPlacementService(this.scene!); // Pass scene
+            // --- End Initialization ---
+
+            await callback(); // Call the callback which now includes spawnPlacedBuildings (make sure it's awaited)
             Materials.addCustomMaterial();
             BlendModes.init();
             OutLiner.init();
+
+            // --- Setup Watcher for New Buildings ---
+            // --- VERIFIED: Watcher logic seems correct ---
+            const buildingStore = useBuildingStore();
+            this.buildingWatcher = watch(
+              () => [...buildingStore.placedBuildings], // Watch a copy to detect additions
+              (newBuildings, oldBuildings) => {
+                if (!oldBuildings) return; // Initial load case handled by spawnPlacedBuildings
+
+                const newlyAdded = newBuildings.filter(
+                  (newB) => !oldBuildings.some((oldB) => oldB.id === newB.id)
+                );
+
+                if (newlyAdded.length > 0) {
+                  console.log(`[Watcher] Detected ${newlyAdded.length} new buildings to spawn.`);
+                  newlyAdded.forEach((buildingData) => {
+                    this.spawnSingleBuilding(buildingData); // Spawn each new building
+                  });
+                }
+              }
+            );
             new Doors();
             resolve();
           });
@@ -180,7 +236,7 @@ export default class Game {
       // Fallback initialization without terrain
       await new Promise<void>((resolve) => {
         PlayerSelf.init(async () => {
-          callback();
+          await callback(); // Call the callback even on fallback (make sure it's awaited)
           Materials.addCustomMaterial();
           BlendModes.init();
           OutLiner.init();
@@ -196,9 +252,9 @@ export default class Game {
       window.globalMap = new GlobalMap(window.scene);
     }
 
-    new Prefabs(() => {
-      //Optimize.setMeshes(globalThis.scene.meshes)
-    });
+    // new Prefabs(() => { // Legacy constructor call removed
+    //   //Optimize.setMeshes(globalThis.scene.meshes)
+    // });
   }
 
   getPlayerId() {
@@ -233,6 +289,110 @@ export default class Game {
     }, 5000);
   }
 
+  // --- ADD METHOD TO SPAWN SAVED BUILDINGS ---
+  private async spawnPlacedBuildings(): Promise<void> {
+    // Make async
+    if (!this.scene) {
+      console.error('Cannot spawn buildings, scene not ready.');
+      return;
+    }
+    const buildingStore = useBuildingStore();
+    const buildingsToSpawn = buildingStore.placedBuildings;
+
+    console.log(`Attempting to spawn ${buildingsToSpawn.length} saved buildings...`);
+    // Use Promise.all to wait for all initial buildings to attempt spawning
+    await Promise.all(
+      buildingsToSpawn.map((buildingData) => this.spawnSingleBuilding(buildingData))
+    );
+    console.log('Finished initial spawning of placed buildings.');
+  }
+
+  /**
+   * Spawns a single building mesh based on its data.
+   * Reusable for initial load and dynamic placement.
+   * @param buildingData The data of the building to spawn.
+   */
+  private async spawnSingleBuilding(buildingData: PlacedBuildingData): Promise<void> {
+    const buildingStore = useBuildingStore(); // Get store instance inside method
+    console.log(
+      `  - Spawning: ${buildingData.blueprintId} (ID: ${buildingData.id}) at ${JSON.stringify(buildingData.position)}`
+    );
+
+    // --- Find the blueprint definition ---
+    const blueprint = buildingStore.availableBlueprints.find(
+      (bp) => bp.id === buildingData.blueprintId
+    );
+    if (!blueprint) {
+      console.warn(
+        `  - Could not find blueprint definition for ${buildingData.blueprintId}. Skipping.`
+      );
+      return; // Skip this building
+    }
+
+    // --- Use Prefabs service to load and instantiate ---
+    try {
+      const container = await Prefabs.loadAssetContainer(blueprint.prefabPath); // Use the static method
+      if (!container) {
+        console.warn(`  - Prefab asset container not loaded: ${blueprint.prefabPath}`);
+        return;
+      }
+
+      // Instantiate the mesh into the scene
+      const instanceResult = container.instantiateModelsToScene(
+        (name) => `placed_${buildingData.id}_${name}`, // Unique name for the instance
+        false, // Don't clone materials unless needed
+        { doNotInstantiate: false }
+      );
+
+      const instanceRoot = instanceResult?.rootNodes?.[0] as AbstractMesh; // Get the root node
+      if (!instanceRoot) {
+        console.warn(`  - Failed to instantiate prefab: ${blueprint.prefabPath}`);
+        return;
+      }
+
+      // Set position and rotation from saved data
+      instanceRoot.position = new Vector3(
+        buildingData.position.x,
+        buildingData.position.y,
+        buildingData.position.z
+      );
+      // Ensure rotationQuaternion is initialized
+      if (!instanceRoot.rotationQuaternion) {
+        instanceRoot.rotationQuaternion = Quaternion.Identity();
+      }
+      instanceRoot.rotationQuaternion.copyFromFloats(
+        buildingData.rotation.x,
+        buildingData.rotation.y,
+        buildingData.rotation.z,
+        buildingData.rotation.w
+      );
+
+      // Add necessary components/scripts (collision, interaction, etc.)
+      instanceRoot.checkCollisions = true; // Example: Enable collisions
+      instanceRoot.metadata = {
+        buildingId: buildingData.id,
+        type: 'placedBuilding',
+        blueprintId: buildingData.blueprintId,
+      }; // Example metadata
+      instanceRoot.setEnabled(true);
+
+      // Add collision meshes to the global collision system
+      // Ensure the root node itself is included if it has geometry/collision shape
+      const meshesForCollision = instanceRoot.getChildMeshes(true); // Get all descendants
+      if (instanceRoot instanceof Mesh && instanceRoot.geometry) {
+        // <-- Check if root is Mesh and has geometry
+        meshesForCollision.push(instanceRoot);
+      }
+      // --- VERIFIED: Collision appending logic ---
+      globalThis.collisions?.appendCollisionByMeshes(meshesForCollision);
+
+      console.log(`  - Successfully spawned: ${buildingData.id} (${blueprint.name})`);
+    } catch (error) {
+      console.error(`  - Error spawning building ${buildingData.id} (${blueprint.name}):`, error);
+    }
+  }
+  // --- END SPAWN METHOD ---
+
   public cleanup(): void {
     console.log('🧹 Cleaning up game instance for HMR...');
 
@@ -249,6 +409,13 @@ export default class Game {
       this.debugKeyListener = null;
       console.log('   - Removed debug key listener');
     }
+
+    // --- Stop Building Watcher ---
+    if (this.buildingWatcher) {
+      this.buildingWatcher(); // Call the stop handle
+      this.buildingWatcher = null;
+      console.log('   - Stopped building watcher');
+    }
     // Add removal for any other global listeners added by Game or its components
 
     // 3. Dispose Babylon Scene
@@ -257,12 +424,13 @@ export default class Game {
         // Stop rendering loop associated with this scene
         this.engine?.stopRenderLoop(); // Ensure render loop tied to this engine/scene stops
         this.scene.dispose();
+        crosshairService.dispose(); // Dispose crosshair service
         console.log('   - Disposed Babylon Scene');
       } catch (error) {
         console.error('   - Error disposing scene:', error);
       }
-      this.scene = undefined; // Help GC - Removed @ts-ignore
-      // globalThis.scene = undefined; // Reset global
+      this.scene = undefined; // Help GC
+      // globalThis.scene = undefined; // Reset global - Be careful if other parts rely on this staying briefly
     }
 
     // 4. Dispose Babylon Engine
@@ -273,15 +441,22 @@ export default class Game {
       } catch (error) {
         console.error('   - Error disposing engine:', error);
       }
-      this.engine = undefined; // Help GC - Removed @ts-ignore
+      this.engine = undefined; // Help GC
     }
 
     // 5. Clean up other components and globals (add dispose methods if they exist)
     // if (window.terrainManager?.dispose) window.terrainManager.dispose(); // Example
+    window.terrainManager?.clearAllChunks();
+
+    // --- Dispose Building Placement Service ---
+    this.buildingPlacementService?.dispose();
+    this.buildingPlacementService = null;
+    console.log('   - Disposed Building Placement Service');
+    // --- End Dispose ---
     window.terrainManager = undefined;
     window.miniMap = undefined; // Assuming MiniMap doesn't need explicit dispose
     window.globalMap = undefined; // Assuming GlobalMap doesn't need explicit dispose
-    // globalThis.collisions = undefined;
+    // globalThis.collisions = undefined; // Assuming Collisions doesn't need explicit dispose
     globalThis.environment = undefined; // If environment setup needs cleanup
     globalThis.assetContainers = []; // Reset asset containers
     window.game = undefined; // Remove global game reference

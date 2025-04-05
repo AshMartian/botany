@@ -103,20 +103,8 @@ src/
 │   │   └── RayCastMesh.ts
 │   └── Rotation.ts
 ├── shims-vue.d.ts
-├── store
-│   ├── store.ts
-│   ├── types.ts
-│   └── vuex
-│   ├── index.ts
-│   ├── level
-│   │   ├── index.ts
-│   │   ├── mutations.ts
-│   │   └── types.ts
-│   ├── settingsLevel
-│   │   ├── index.ts
-│   │   ├── mutations.ts
-│   │   └── types.ts
-│   └── types.ts
+├── stores
+
 ├── styles
 │   ├── app.sass
 │   ├── finish_page.sass

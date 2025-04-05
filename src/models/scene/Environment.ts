@@ -79,9 +79,9 @@ const environmentSettings = {
     intensity: 3,
   },
   shadowGenerator: {
-    mapSize: 2064,
+    mapSize: 4096,
     usePercentageCloserFiltering: true,
-    numCascades: 4,
+    numCascades: 6,
     autoCalcDepthBounds: false,
     depthClamp: true,
     stabilizeCascades: false,

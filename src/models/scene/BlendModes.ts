@@ -1,4 +1,4 @@
-import { Engine, Mesh } from '@babylonjs/core';
+import { Engine, Mesh, AbstractMesh } from '@babylonjs/core'; // <-- Added AbstractMesh
 import { isNumber } from 'lodash';
 
 export default class BlendModes {
@@ -20,7 +20,8 @@ export default class BlendModes {
     alphaTags.forEach((tag) => {
       const meshes = globalThis.scene.getMeshesByTags(tag.toLowerCase());
 
-      meshes.forEach((mesh: Mesh) => {
+      meshes.forEach((mesh: AbstractMesh) => {
+        // <-- Changed Mesh to AbstractMesh
         if (mesh.material) {
           const type = Engine[tag];
 

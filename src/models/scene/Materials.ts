@@ -8,7 +8,8 @@ export default class Materials {
     alphaTags.forEach((tag) => {
       const meshes = globalThis.scene.getMeshesByTags(tag.toLowerCase());
 
-      meshes.forEach((mesh: Mesh) => {
+      meshes.forEach((mesh: AbstractMesh) => {
+        // <-- Changed Mesh to AbstractMesh
         if (tag === 'material_glass') {
           const glassMaterial = new PBRMaterial('glass_material', scene);
           glassMaterial.metallic = 0;

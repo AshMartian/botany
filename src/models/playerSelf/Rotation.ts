@@ -102,4 +102,12 @@ export default class Rotation {
     if (!this.mesh) return 0;
     return this.mesh.rotation.y;
   }
+
+  dispose() {
+    if (this.mesh) {
+      this.mesh.dispose();
+      this.mesh = null;
+    }
+    this.scene.onBeforeRenderObservable.removeCallback(this.setupRotationAnimation);
+  }
 }

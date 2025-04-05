@@ -3,6 +3,7 @@ import { defineStore } from 'pinia';
 import { openDB } from 'idb';
 import { createNoise2D, createNoise3D } from 'simplex-noise';
 import alea from 'alea';
+import { VertexData } from '@babylonjs/core';
 // Import all spawners dynamically
 import * as spawners from '@/models/terrain/spawners';
 
@@ -32,6 +33,7 @@ export interface VertexProperties {
   perchlorates: number;
   fungusGrowth: number;
   fertilizationStatus: number;
+  height: number; // Can be positive or negative to represent terrain height modifications
 }
 
 // Chunk data structure
@@ -40,7 +42,7 @@ export interface TerrainChunkData {
   width: number;
   height: number;
   defaultVertexData: VertexProperties;
-  vertexData: Array<VertexProperties & { x: number; y: number }>; // Override data for specific vertices
+  vertexData: Array<Partial<VertexProperties> & { x: number; y: number }>; // Override data for specific vertices
   resourceNodes: ResourceNode[];
   updatedAt: string;
 }
@@ -62,9 +64,20 @@ async function saveToIndexedDB(chunkId: string, chunkData: TerrainChunkData) {
       },
     });
 
-    await db.put(STORE_NAME, chunkData, chunkId);
+    // Create a clean, serializable copy for IndexedDB
+    const cleanData = {
+      ...chunkData,
+      // Make sure defaultVertexData is just plain data
+      defaultVertexData: { ...chunkData.defaultVertexData },
+      // Clean up each vertex data entry
+      vertexData: chunkData.vertexData.map((v) => ({ ...v })),
+      // Clean up each resource node
+      resourceNodes: chunkData.resourceNodes.map((r) => ({ ...r })),
+    };
+
+    await db.put(STORE_NAME, cleanData, chunkId);
   } catch (e) {
-    console.warn('Failed to save terrain chunk to IndexedDB:', e);
+    console.error('Failed to save terrain chunk to IndexedDB:', e);
   }
 }
 
@@ -120,6 +133,7 @@ export const useTerrainStore = defineStore('terrain', {
         perchlorates: 70 + rng() * 60,
         fungusGrowth: 0,
         fertilizationStatus: 0, // Unfertilized initially
+        height: 0, // Default height
       };
     },
 
@@ -285,7 +299,16 @@ export const useTerrainStore = defineStore('terrain', {
       properties: Partial<VertexProperties>
     ): Promise<void> {
       const chunk = this.chunks[chunkId];
-      if (!chunk) return;
+      if (!chunk) {
+        // Try to load from IndexedDB first
+        const loadedChunk = await loadFromIndexedDB(chunkId);
+        if (loadedChunk) {
+          this.chunks[chunkId] = loadedChunk;
+        } else {
+          console.warn(`Cannot update vertex data: Chunk ${chunkId} not found`);
+          return;
+        }
+      }
 
       // Find existing vertex data or create new
       const vertexIndex = chunk.vertexData.findIndex((v) => v.x === x && v.y === y);
@@ -299,26 +322,40 @@ export const useTerrainStore = defineStore('terrain', {
           ...properties,
         };
         chunk.vertexData.push(newVertex);
+        console.log(`Created new vertex data at (${x},${y}) in chunk ${chunkId}`, properties);
       } else {
         // Update existing vertex data
         chunk.vertexData[vertexIndex] = {
           ...chunk.vertexData[vertexIndex],
           ...properties,
         };
+        console.log(`Updated vertex data at (${x},${y}) in chunk ${chunkId}`, properties);
       }
 
       // Update timestamp
       chunk.updatedAt = new Date().toISOString();
       this.lastUpdated = chunk.updatedAt;
 
-      // Save to IndexedDB
+      // Immediately save to IndexedDB to prevent data loss
       await saveToIndexedDB(chunkId, chunk);
+
+      // CRITICAL: Send an event to notify about this vertex update
+      // This enables the TerrainChunk to immediately update the mesh
+      const updateEvent = new CustomEvent('terrain-vertex-modified', {
+        detail: {
+          chunkId,
+          x,
+          y,
+          properties,
+        },
+      });
+      window.dispatchEvent(updateEvent);
     },
 
     /**
      * Get vertex data for a specific position in a chunk
      */
-    getVertexData(chunkId: string, x: number, y: number): VertexProperties {
+    getVertexData(chunkId: string, x: number, y: number): Partial<VertexProperties> {
       const chunk = this.chunks[chunkId];
       if (!chunk) return this.generateDefaultVertexProperties(`${chunkId}_${x}_${y}`);
 
@@ -347,6 +384,92 @@ export const useTerrainStore = defineStore('terrain', {
         await db.delete(STORE_NAME, chunkId);
       } catch (error) {
         console.error('Failed to clear chunk data from IndexedDB:', error);
+      }
+    },
+
+    /**
+     * Load and apply all stored height modifications for a chunk in one operation
+     * Use this when initializing a terrain chunk to ensure all modifications are applied at once
+     */
+    async loadAndApplyChunkModifications(
+      chunkX: number,
+      chunkY: number,
+      mesh: any
+    ): Promise<number> {
+      const chunkId = `${chunkX}_${chunkY}`;
+
+      // First, ensure the chunk data is loaded from IndexedDB
+      const chunk = await this.getOrCreateChunk(chunkX, chunkY);
+
+      // If no vertex data is stored, nothing to apply
+      if (!chunk || !chunk.vertexData || chunk.vertexData.length === 0) {
+        return 0;
+      }
+
+      // If mesh is not provided or not valid, we can't apply changes
+      if (!mesh || !mesh.getVerticesData) {
+        console.warn(`Cannot apply height modifications to chunk ${chunkId}: invalid mesh`);
+        return 0;
+      }
+
+      try {
+        // Get mesh vertex positions
+        const positions = mesh.getVerticesData('position');
+        if (!positions) {
+          console.warn(`Cannot apply height modifications to chunk ${chunkId}: no positions data`);
+          return 0;
+        }
+
+        const vertexResolution = 128; // Default resolution for terrain chunks
+        let modifiedCount = 0;
+
+        // Apply all vertex modifications from the store in one go
+        for (const vertex of chunk.vertexData) {
+          if (typeof vertex.height === 'number' && vertex.height !== 0) {
+            const x = vertex.x;
+            const y = vertex.y;
+
+            // Calculate index in the positions array
+            const vertexIndex = (y * vertexResolution + x) * 3 + 1; // +1 for Y component
+
+            // Validate index is within bounds
+            if (vertexIndex < 0 || vertexIndex >= positions.length) {
+              console.warn(`Invalid vertex index ${vertexIndex} for chunk ${chunkId}`);
+              continue;
+            }
+
+            // Apply the stored height value - important: this is adding to the base height
+            // not replacing it, to ensure consistent results
+            positions[vertexIndex] += vertex.height;
+            modifiedCount++;
+          }
+        }
+
+        // Only update mesh if we actually modified vertices
+        if (modifiedCount > 0) {
+          // Update the mesh with all modified positions
+          mesh.updateVerticesData('position', positions);
+
+          // Update normals
+          const indices = mesh.getIndices();
+          if (indices) {
+            const normals: number[] = [];
+            // Use BabylonJS to recompute all normals
+            VertexData.ComputeNormals(positions, indices, normals);
+            mesh.updateVerticesData('normal', normals);
+          }
+
+          // Force mesh to update
+          mesh.refreshBoundingInfo();
+          mesh.computeWorldMatrix(true);
+
+          console.log(`Applied ${modifiedCount} stored height modifications to chunk ${chunkId}`);
+        }
+
+        return modifiedCount;
+      } catch (error) {
+        console.error(`Error applying height modifications to chunk ${chunkId}:`, error);
+        return 0;
       }
     },
   },

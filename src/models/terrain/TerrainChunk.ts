@@ -58,30 +58,75 @@ export default class TerrainChunk {
   public async generate(): Promise<void> {
     // Create a new mesh for this chunk
     this.mesh = new Mesh(`terrain_chunk_${this.x}_${this.y}`, this.scene);
+    // *** HIDE MESH INITIALLY ***
+    this.mesh.isVisible = false;
+    // Initially disable collisions/picking
+    this.mesh.checkCollisions = false;
+    this.mesh.isPickable = false;
 
     try {
-      // Process the chunk with our procedural generation system first
-      // This will check the terrainStore for existing data or create new data
-
-      // console.log(`Generating chunk ${this.x}_${this.y}`);
-      // Fetch heightmap data from the server
       const heightmapData = await this.fetchHeightmapData();
-      this.createMeshFromHeightmap(heightmapData);
-      // console.log(`Chunk ${this.x}_${this.y} created successfully`);
+      // createMeshFromHeightmap now applies vertex data and sets basic mesh properties
+      await this.createMeshFromHeightmap(heightmapData);
+
+      // Apply material and wait for it to be ready
+      await this.applyTerrainMaterial(); // This now waits internally
+
+      // --- Wait for Mesh and Material Readiness ---
+      if (this.mesh && this.mesh.material) {
+        const maxAttempts = 30; // 3 seconds total wait
+        let attempts = 0;
+        while (attempts < maxAttempts) {
+          // Check mesh readiness (including submeshes) and material readiness
+          if (this.mesh.isReady(true) && this.mesh.material.isReady(this.mesh)) {
+            break; // Exit loop if ready
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          attempts++;
+        }
+
+        if (attempts >= maxAttempts) {
+          console.warn(
+            `Chunk ${this.key} mesh or material did not become ready after ${maxAttempts * 100}ms.`
+          );
+          // Throw an error to indicate failure
+          throw new Error(`Chunk ${this.key} readiness timeout`);
+        } else {
+          // --- Enable Interaction ONLY when fully ready ---
+          this.mesh.checkCollisions = true;
+          this.mesh.isPickable = true;
+          // Update metadata as well
+          if (this.mesh.metadata) {
+            this.mesh.metadata.isInteractable = true;
+          }
+          console.log(`Chunk ${this.key} mesh and material are ready. Collisions/Picking enabled.`);
+        }
+      } else {
+        console.error(`Mesh or material missing after creation/application for chunk ${this.key}`);
+        throw new Error(`Mesh or material missing for chunk ${this.key}`);
+      }
+      // --- End Readiness Wait ---
     } catch (error) {
-      console.error(`Failed to load heightmap for chunk ${this.x}_${this.y}:`, error);
+      console.error(`Failed to generate chunk ${this.x}_${this.y}:`, error);
+      // Dispose potentially partially created mesh on error
+      this.dispose();
+      throw error; // Re-throw error so caller knows generation failed
     }
 
-    // Validate the mesh was created successfully
-    if (this.mesh) {
-      // Add explicit visibility check
-      this.mesh.isVisible = true;
-      this.mesh.visibility = 1.0;
-
-      // Force compute world matrix
-      this.mesh.computeWorldMatrix(true);
+    // Validate the mesh was created successfully and is ready
+    if (this.mesh && this.isFullyReady()) {
+      // *** DO NOT SET VISIBLE HERE ***
+      // this.mesh.isVisible = true; // Visibility is handled by setPosition
+      this.mesh.visibility = 1.0; // Keep visibility property at 1
+      this.mesh.computeWorldMatrix(true); // Ensure matrix is up-to-date
     } else {
-      console.error(`Failed to create mesh for chunk ${this.x},${this.y}`);
+      console.error(
+        `Failed to create or finalize mesh for chunk ${this.x},${this.y}. Mesh state:`,
+        this.mesh
+      );
+      // Dispose if something went wrong after readiness checks
+      this.dispose();
+      throw new Error(`Mesh finalization failed for chunk ${this.key}`);
     }
   }
 
@@ -89,6 +134,7 @@ export default class TerrainChunk {
     // Validate chunk coordinates before fetching
     if (this.x < 0 || this.x >= 144 || this.y < 0 || this.y >= 72) {
       console.error(`Invalid chunk coordinates: ${this.x},${this.y}`);
+      throw new Error(`Invalid chunk coordinates: ${this.x},${this.y}`); // Throw error
     }
 
     try {
@@ -114,7 +160,7 @@ export default class TerrainChunk {
       return this.parseHeightmapData(buffer);
     } catch (error) {
       console.error(`Failed to fetch/parse heightmap for chunk ${this.x},${this.y}:`, error);
-      // Always throw to trigger procedural fallback
+      // Always throw to trigger procedural fallback or error handling in generate
       throw error;
     }
   }
@@ -162,7 +208,7 @@ export default class TerrainChunk {
     return data;
   }
 
-  private createMeshFromHeightmap(heightmapData: Float32Array): void {
+  private async createMeshFromHeightmap(heightmapData: Float32Array): Promise<void> {
     if (!this.mesh) {
       console.error(`Missing mesh for chunk ${this.x},${this.y}`);
       return;
@@ -241,41 +287,34 @@ export default class TerrainChunk {
       vertexData.uvs = uvs;
       vertexData.applyToMesh(this.mesh);
 
-      // Add physics and visibility properties
-      this.mesh.checkCollisions = true;
-      this.mesh.isPickable = true;
-      this.mesh.isVisible = true;
-      this.mesh.visibility = 1;
-      // this.mesh.receiveShadows = true; // Set in applyTerrainMaterial
-      // this.mesh.doNotSyncBoundingInfo = false;
-      this.mesh.metadata = { isTerrainChunk: true, isInteractable: true };
-      // Set name for shadow system to identify terrain chunks
+      // Set basic mesh properties (interaction disabled initially)
+      this.mesh.checkCollisions = false; // Disabled until fully ready in generate()
+      this.mesh.isPickable = false; // Disabled until fully ready in generate()
+      // *** ENSURE isVisible is false here too ***
+      this.mesh.isVisible = false; // Ensure it starts hidden
+      this.mesh.visibility = 1; // Keep visibility property at 1
+      this.mesh.metadata = { isTerrainChunk: true, isInteractable: false }; // Mark as not interactable yet
       this.mesh.name = `terrain_chunk_${this.x}_${this.y}`;
 
-      // Force updates to ensure proper rendering
+      // Force updates
       this.mesh.computeWorldMatrix(true);
       this.mesh.refreshBoundingInfo();
       this.mesh._updateBoundingInfo();
-      this.mesh.forceSharedVertices();
+      // this.mesh.forceSharedVertices(); // Might not be needed/desirable
 
-      // Set pickability for physics system
-      const physicsEngine = this.scene.getPhysicsEngine();
-      if (physicsEngine && this.mesh.physicsImpostor) {
-        this.mesh.physicsImpostor.forceUpdate();
-      }
+      // NO material application here - moved to applyTerrainMaterial
+      // NO physics impostor setup here - handle elsewhere if needed
 
       // Debug visualization for development
       this.mesh.showBoundingBox = false;
-      this.mesh.enablePointerMoveEvents = true;
+      this.mesh.enablePointerMoveEvents = true; // Keep this if needed for other interactions
 
-      // Apply the shader material
-      this.applyTerrainMaterial();
-
-      // Ensure bounding info is properly computed
+      // Ensure bounding info is properly computed after vertex data application
       this.mesh.computeWorldMatrix(true);
       this.mesh.refreshBoundingInfo();
     } catch (error) {
       console.error(`Error creating terrain chunk mesh at ${this.x},${this.y}:`, error);
+      throw error; // Re-throw to be caught by generate()
     }
   }
 
@@ -286,34 +325,65 @@ export default class TerrainChunk {
     return (Math.sin(x * scale) * Math.cos(z * scale) + 1) / 2; // 0 to 1 range
   }
 
-  private applyTerrainMaterial(): void {
+  private async applyTerrainMaterial(): Promise<void> {
     if (!this.mesh) return;
 
-    // Create the CustomMaterial using our updated class
-    const customMaterial = TerrainMaterial.create(
-      // This now returns CustomMaterial
-      `terrain_material_${this.x}_${this.y}`,
-      this.scene,
-      globalThis.shadowGenerator // Pass generator - create doesn't use it directly, but keeps signature consistent for now
-    );
+    try {
+      // Create the CustomMaterial using our updated class
+      const customMaterial = TerrainMaterial.create(
+        `terrain_material_${this.x}_${this.y}`,
+        this.scene
+      );
 
-    customMaterial.specularColor = new Color3(0.2, 0.1, 0.05);
-    customMaterial.ambientColor = new Color3(0.5, 0.5, 0.5);
-    customMaterial.diffuseColor = new Color3(0.8, 0.6, 0.4);
+      // Set material properties
+      customMaterial.specularColor = new Color3(0.2, 0.1, 0.05);
+      customMaterial.ambientColor = new Color3(0.5, 0.5, 0.5);
+      customMaterial.diffuseColor = new Color3(0.8, 0.6, 0.4);
 
-    // Apply the material to the mesh
-    this.mesh.material = customMaterial;
+      // Apply the material to the mesh
+      this.mesh.material = customMaterial;
 
-    // Ensure mesh receives shadows and casts them correctly
-    if (globalThis.shadowGenerator && this.mesh) {
-      // REMOVED: ShadowDepthWrapper usage (not needed for CustomMaterial)
+      // Ensure mesh receives shadows and casts them correctly
+      if (globalThis.shadowGenerator) {
+        this.mesh.receiveShadows = true; // Ensure this is true
+        globalThis.shadowGenerator.addShadowCaster(this.mesh, true);
+      }
 
-      // Enable mesh to receive shadows (StandardMaterial property)
-      this.mesh.receiveShadows = true;
-
-      // Add mesh to the shadow caster list
-      // The 'true' argument includes descendants, which is fine here.
-      globalThis.shadowGenerator.addShadowCaster(this.mesh, true);
+      // --- Internal Wait for Material Readiness ---
+      const meshRef = this.mesh; // Capture mesh reference
+      const maxAttempts = 30; // 3 seconds
+      let attempts = 0;
+      while (attempts < maxAttempts) {
+        if (customMaterial.isReady(meshRef)) {
+          // Force compilation once ready
+          await customMaterial.forceCompilationAsync(meshRef);
+          console.log(`Material for chunk ${this.key} is ready.`);
+          return; // Material is ready
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
+      }
+      console.warn(
+        `Material for chunk ${this.key} did not become ready after ${maxAttempts * 100}ms.`
+      );
+      // Throw error if material doesn't become ready
+      throw new Error(`Material readiness timeout for chunk ${this.key}`);
+    } catch (error) {
+      console.error(`Error applying material to chunk ${this.x},${this.y}:`, error);
+      // Create a fallback material if custom material fails
+      if (this.mesh) {
+        // Check mesh still exists
+        const fallbackMaterial = new StandardMaterial(
+          `terrain_fallback_${this.x}_${this.y}`,
+          this.scene
+        );
+        fallbackMaterial.diffuseColor = new Color3(0.8, 0.6, 0.4);
+        fallbackMaterial.specularColor = new Color3(0.2, 0.1, 0.05);
+        this.mesh.material = fallbackMaterial;
+        // Consider if fallback needs a readiness check/wait too, or just assume it's ready
+      }
+      // Re-throw the error so generate() knows something went wrong
+      throw error;
     }
   }
 
@@ -322,25 +392,37 @@ export default class TerrainChunk {
     const heightmapData = new Float32Array(data.heightmap);
 
     // Create mesh using the received data
+    // Note: This assumes applyNetworkData is called *instead* of generate.
+    // If it needs to integrate with the new generate flow, this needs adjustment.
+    // For now, keep it simple, but it won't have the readiness checks of generate().
     this.createMeshFromHeightmap(heightmapData);
+    // Potentially apply a default/network material here too.
   }
 
   /**
-   * Set position of the terrain chunk
+   * Set position of the terrain chunk AND make it visible
    */
   public setPosition(position: Vector3): void {
     if (this.mesh) {
       // Check if we already have this position (to avoid redundant updates)
       if (this.mesh.position && this.mesh.position.equalsWithEpsilon(position, 0.001)) {
-        // console.log(`Terrain chunk ${this.x},${this.y} already at position ${position.toString()}`);
+        // If already at position, ensure it's visible (in case it was hidden before)
+        if (!this.mesh.isVisible) {
+          this.mesh.isVisible = true;
+          console.log(`Chunk ${this.key} was already at position, made visible.`);
+        }
         return;
       }
 
       this.mesh.position = position.clone();
 
-      // Ensure bounding info is updated
+      // Ensure bounding info is updated after position change
       this.mesh.computeWorldMatrix(true);
       this.mesh.refreshBoundingInfo();
+
+      // *** SHOW MESH AFTER POSITIONING ***
+      this.mesh.isVisible = true;
+      console.log(`Chunk ${this.key} positioned and made visible.`);
     }
   }
 
@@ -355,20 +437,33 @@ export default class TerrainChunk {
       if (globalThis.shadowGenerator) {
         globalThis.shadowGenerator.removeShadowCaster(this.mesh, true);
       }
+      // Dispose material first
+      if (this.mesh.material) {
+        this.mesh.material.dispose();
+      }
       this.mesh.dispose();
       this.mesh = null;
     }
   }
 
-  // Add this method to check if the mesh is fully ready for raycasting
+  // Simplified synchronous check
   public isFullyReady(): boolean {
-    const mesh = this.getMesh();
+    // Check if mesh exists, is ready (incl. submeshes), has vertices,
+    // material exists and is ready, and interaction flags are enabled.
     return !!(
-      mesh &&
-      mesh.isReady() &&
-      mesh.getTotalVertices() > 0 &&
-      mesh.computeWorldMatrix(true)
+      this.mesh &&
+      this.mesh.isReady(true) && // Use true to check submeshes too
+      this.mesh.getTotalVertices() > 0 &&
+      this.mesh.material?.isReady(this.mesh) &&
+      this.mesh.checkCollisions === true && // Check if collisions were enabled
+      this.mesh.isPickable === true // Check if picking was enabled
     );
+  }
+
+  private setupMeshProperties(mesh: Mesh): void {
+    // This method seems redundant now as properties are set in createMeshFromHeightmap and generate
+    if (!mesh) return;
+    // Initial setup is handled elsewhere
   }
 
   public visualizeChunkBoundaries(): void {
@@ -383,6 +478,12 @@ export default class TerrainChunk {
       new Vector3(0, 10, size),
       new Vector3(0, 10, 0),
     ];
+
+    // Check if boundary lines already exist
+    const existingLines = this.scene.getMeshByName(`chunk_boundary_${this.x}_${this.y}`);
+    if (existingLines) {
+      existingLines.dispose();
+    }
 
     const lines = MeshBuilder.CreateLines(
       `chunk_boundary_${this.x}_${this.y}`,
@@ -410,7 +511,7 @@ export default class TerrainChunk {
     this.mesh.material = material;
 
     // Dispose old material to prevent memory leaks
-    if (oldMaterial) {
+    if (oldMaterial && oldMaterial !== material) {
       oldMaterial.dispose();
     }
   }
